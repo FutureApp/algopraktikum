@@ -163,14 +163,15 @@ int main(int argc, char *argv[])
     	}
 		double mpi_idleTimeEnd = MPI_Wtime();
     	idleTime += mpi_idleTimeEnd-mpi_ideleTimeStart;
+		/*
+		// Use this if you want to wait ;)
 		MPI_Wait(&request, &status);
     	MPI_Wait(&request2, &status);
-		/*
 		*/
 		resultFunction1 += dataArrayToRev[0];
 		resultFunction2 += dataArrayToRev[1];
 	}
-	 double mpi_loopEnd = MPI_Wtime();
+	double mpi_loopEnd = MPI_Wtime();
 
 
 	// --------------------------------------------------------[Para Part END]--
