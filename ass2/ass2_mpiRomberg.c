@@ -51,8 +51,6 @@ int my_rank; // rank of the process
 
 
 
-// TODO Diese vars sollen vom user gesetzt werden. (unten ist ein Vorschlag)
-
 int main(int argc, char *argv[])
 {
     // -----------------------------------------------------------------[Init]--
@@ -60,17 +58,24 @@ int main(int argc, char *argv[])
 	double idleTime=0;
 	int namelen;							 // length of name
 	int my_rank;							 // rank of the process
+	
 	MPI_Init(&argc, &argv);					 // initializing of MPI-Interface
 	MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //get your rank
-	double mpi_programStart = MPI_Wtime();
-
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-	 
+	
+	double mpi_programStart = MPI_Wtime();
 	char buffer[(MAX_BUFFER_SIZE * world_size) + MPI_BSEND_OVERHEAD];
 	int bsize = sizeof(buffer);
 
 	// ----------------------------------------------------------[ Para check ]--
-
+	if(taskIspowerof2(world_size)!=1){
+		utilOTPrint(my_rank,0, "ERROR\n");
+		utilOTPrint(my_rank,0, "No, no, no --- Parameter n is not a power of 2\n");
+		if(my_rank==0)
+			utilPrintHelp();
+		exit(0);
+	}
+	
 	// -----------------------------------------------------------[ pre Init ]--
 
 	char *c, proc_name[MPI_MAX_PROCESSOR_NAME + 1]; // hostname
@@ -177,12 +182,6 @@ int main(int argc, char *argv[])
 	// --------------------------------------------------------[Para Part END]--
 	double mpi_programEnd = MPI_Wtime();
 	double loopTimaAtAll= mpi_loopEnd-mpi_loopStart;
-
-	
-	
-
-
-
 	
 	// ----------------------------------------------------------[Result Call]--
 	MPI_Barrier(MPI_COMM_WORLD);
@@ -270,25 +269,6 @@ int utilCheckParameters(int my_rank, int argc, char *argv[])
 	int parameterMFound = 0;
 	for (int i = 0; i < argc; i++)
 	{
-		if ((strcmp(argv[i], "-m") == 0))
-		{
-			if (argv[i + 1])
-			{
-				mValue = atoi(argv[i + 1]);
-				parameterMFound = 1;
-			}
-			else
-			{
-				if (my_rank == 0)
-				{
-					printf(
-						"Problem occurs while trying to cast input m <%s> to int",
-						argv[i + 1]);
-					utilPrintHelp();
-				}
-				terminate = 1;
-			}
-		}
 		if (strcmp(argv[i], "-h") == 0)
 		{
 			if (my_rank == 0)
@@ -404,9 +384,11 @@ int utilPrintHelp()
 	utilOTPrint(0, my_rank, "-----------------------------------------------------[Help]--\n");
 	utilOTPrint(0, my_rank, "\n");
 	utilOTPrint(0, my_rank, "Program is optimized for less then  99998 given nodes. \n");
-	utilOTPrint(0, my_rank, "Every parameter marked with <*> is required!\n");
-
-	utilOTPrint(0, my_rank, "Parameter* -m <number>: Specifies the amount of randome numbers each process need to generate.\n");
+	utilOTPrint(0, my_rank, "MPI-Parameter -n must be a power of 2. \n");
+	utilOTPrint(0, my_rank, "\n");
+	utilOTPrint(0, my_rank, "Follow the instructions on the screen. Program expects number given in double-format. \n");
+	utilOTPrint(0, my_rank, "No guarantee if you differ the format! \n");
+	utilOTPrint(0, my_rank, " \n");
 	utilOTPrint(0, my_rank, "\n");
 	utilOTPrint(0, my_rank, "\n");
 	return 0;
