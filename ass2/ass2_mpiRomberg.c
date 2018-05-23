@@ -56,6 +56,7 @@ int main(int argc, char *argv[])
     // -----------------------------------------------------------------[Init]--
 	double idleOperations = 1;
 	double idleTime=0;
+	int steps = -1;
 	int namelen;							 // length of name
 	int my_rank;							 // rank of the process
 	
@@ -67,14 +68,6 @@ int main(int argc, char *argv[])
 	char buffer[(MAX_BUFFER_SIZE * world_size) + MPI_BSEND_OVERHEAD];
 	int bsize = sizeof(buffer);
 
-	// ----------------------------------------------------------[ Para check ]--
-	if(taskIspowerof2(world_size)!=1){
-		utilOTPrint(my_rank,0, "ERROR\n");
-		utilOTPrint(my_rank,0, "No, no, no --- Parameter n is not a power of 2\n");
-		if(my_rank==0)
-			utilPrintHelp();
-		exit(0);
-	}
 	
 	// -----------------------------------------------------------[ pre Init ]--
 
@@ -89,41 +82,65 @@ int main(int argc, char *argv[])
 
 	// ------------------------------------------------------------[Init Call]--
 
-	int rounds= (log(world_size)/log(2));
-	int n = 10;
+	int n = -100;
 	int i;
 	double **R;
-
-
 	double globalBoundA;
 	double globalBoundB;
 
+	// --------------------------------------------------------------[ Input ]--
 	if (my_rank==0) {
-		printf("Gib die Grenze A ein:\n");
+		printf("Gib die Grenze A ein (double):\n");
 		scanf("%lf",&globalBoundA);
-		printf("Gib die Grenze B ein:\n");
+		printf("Gib die Grenze B ein (double):\n");
 		scanf("%lf",&globalBoundB);
-		printf("Bounds: %f > %f \n",globalBoundA,globalBoundB );
+		printf("Wieviele steps(>=1)? (int):\n");
+		scanf("%d",&steps);
+		printf("Bounds: %f > %f | steps (%d)\n",globalBoundA,globalBoundB,steps );
 	} 	
 	MPI_Bcast(&globalBoundA,1, MPI_DOUBLE,0,MPI_COMM_WORLD);
 	MPI_Bcast(&globalBoundB,1, MPI_DOUBLE,0,MPI_COMM_WORLD);
+	MPI_Bcast(&steps,1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	// ----------------------------------------------------------[ Para check ]--
+	if(taskIspowerof2(world_size)!=1){
+		utilOTPrint(my_rank,0, "ERROR\n");
+		utilOTPrint(my_rank,0, "No, no, no --- Parameter n is not a power of 2\n");
+		if(my_rank==0)
+			utilPrintHelp();
+		exit(0);
+	}
+	if(steps<1){
+		utilOTPrint(my_rank,0, "ERROR\n");
+		utilOTPrint(my_rank,0, "No, no, no --- parameter <steps> need to be >=1\n");
+		if(my_rank==0)
+			utilPrintHelp();
+		exit(0);
+	}
+	
+
+	
+
+	// CALC
+	int rounds= (log(world_size)/log(2));
 	double diffAandB= globalBoundB-globalBoundA;
 	double chunkSizeOfPro = diffAandB / world_size;
 
 	//start
 	double myA = globalBoundA+( chunkSizeOfPro * my_rank);
-	double myB = globalBoundA+(chunkSizeOfPro * (my_rank +1));
+	double myB = globalBoundA+( chunkSizeOfPro * (my_rank +1));
 
 	printf("Me (%d) will calc from (%f) to (%f)\n",my_rank,myA,myB);
 	double resultFunction1 = 100.0;
 	double resultFunction2 = 100.0;	
 
 	double F(double), G(double), P(double);
+	
+	n = steps;
 	R = calloc((n + 1), sizeof(double *));
 	for (i = 0; i <= n; i++)
 		R[i] = calloc((n + 1), sizeof(double));
 
-	
 	resultFunction1 = romberg(G, myA, myB, n, R); 
 	resultFunction2 = romberg(P, myA, myB, n, R); 
 
@@ -142,12 +159,11 @@ int main(int argc, char *argv[])
     	MPI_Status status;
 		
 		printf("ROUND(%d) Me(%d) call Partner(%d)\n", round, my_rank, partnerRank);
-		
-		
+	
 		/*
 		MPI_Sendrecv(&dataArrayToSend, dataToSend, MPI_DOUBLE, partnerRank, round, &dataArrayToRev, dataToSend, MPI_DOUBLE, partnerRank, round, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
 		*/
+
 		if(my_rank<partnerRank){
 		MPI_Isend(dataArrayToSend, dataToSend, MPI_DOUBLE, partnerRank, 123, MPI_COMM_WORLD, &request2);
 		MPI_Irecv(dataArrayToRev, dataToSend, MPI_DOUBLE, partnerRank, 123, MPI_COMM_WORLD, &request);
@@ -188,15 +204,15 @@ int main(int argc, char *argv[])
 	usleep(100);
 	if(my_rank==0){
 	utilOTPrint(0, my_rank,"--------------------- RESULT\n");
-	printf("boundaries: %f -> %f \n", globalBoundA, globalBoundB);
+	printf("boundaries: %f -> %f  | steps = %d \n", globalBoundA, globalBoundB, n);
 	utilOTPrint(0, my_rank,"A:=log(7 * x) / x       | B:=sqrt((3 * x) + 2)\n");
+	printf("(A)=%f (B)=%f  \n", resultFunction1, resultFunction2);
 	printf("\n");
+	utilOTPrint(0, my_rank,"--------------------- MES\n");
 	}
 	MPI_Barrier(MPI_COMM_WORLD);
 	usleep(100);
-	printf("[Node %d] (A)=%f (B)=%f  loopTime(%f) IdleOP's(%f) IdleTime(%f)\n", my_rank, resultFunction1, resultFunction2, loopTimaAtAll, idleOperations, idleTime);
-
-	
+	printf("[Node %d] Ia=%f Ie=%f steps=%d (A)=%f (B)=%f  loopTime(%f) IdleOP's(%f) IdleTime(%f)\n", my_rank, myA,myB, n ,resultFunction1, resultFunction2, loopTimaAtAll, idleOperations, idleTime);
 	MPI_Buffer_detach((void *)buffer, &bsize);
 	MPI_Finalize(); // finalizing MPI interface
     return 0;
@@ -386,7 +402,8 @@ int utilPrintHelp()
 	utilOTPrint(0, my_rank, "Program is optimized for less then  99998 given nodes. \n");
 	utilOTPrint(0, my_rank, "MPI-Parameter -n must be a power of 2. \n");
 	utilOTPrint(0, my_rank, "\n");
-	utilOTPrint(0, my_rank, "Follow the instructions on the screen. Program expects number given in double-format. \n");
+	utilOTPrint(0, my_rank, "Follow the instructions on the screen. Enter the first 2 arguments as double's (integration limits).\n");
+	utilOTPrint(0, my_rank, "Last parameter(integer) should be between 1 and 15.\n");
 	utilOTPrint(0, my_rank, "No guarantee if you differ the format! \n");
 	utilOTPrint(0, my_rank, " \n");
 	utilOTPrint(0, my_rank, "\n");
@@ -423,7 +440,7 @@ double romberg(double f(double), double a, double b, int n, double **R) //Hier M
 	double h, sum;
 	h = b - a;
 	R[1][1] = 0.5 * h * (f(a) + f(b));
-	printf(" Rs[1][1] = %f\n", R[1][1]);
+	//printf("(%d) Rs[1][1] = %f\n", my_rank, R[1][1]);
 	for (i = 2; i <= n; i++) {
 		h = (b-a)*pow(2,1-i);
 //		h *= 0.5;
