@@ -8,11 +8,7 @@
  Environment variables: no                                           
                                                                      
  Description:                                                        
-TODO -- Was macht unser Programm                                                                     
-Calculates the minimum, maximum, sum and arithmetical average of
-a random set of integers. Each process gets an array and recalculates the results
-and forwards it.
- Program uses buffered communication.
+In this Assignment there is a method for numerical Integration. Here we use the Romberg Method combinded with MPI parallel programming.
 /************************************************************************/
 
 
@@ -55,13 +51,13 @@ int my_rank; // rank of the process
 
 
 
-// TODO Diese vars sollen vom user gesetzt werden.
-double globalBoundA;
-double globalBoundB;
+// TODO Diese vars sollen vom user gesetzt werden. (unten ist ein Vorschlag)
 
 int main(int argc, char *argv[])
 {
     // -----------------------------------------------------------------[Init]--
+	double idleOperations = 1;
+	double idleTime=0;
 	int namelen;							 // length of name
 	int my_rank;							 // rank of the process
 	MPI_Init(&argc, &argv);					 // initializing of MPI-Interface
@@ -94,13 +90,18 @@ int main(int argc, char *argv[])
 	double **R;
 
 
+	double globalBoundA;
+	double globalBoundB;
 
-	//TODO Diese Vars sollen durch den user gesetzt werden. 
-
-
-	globalBoundA = 0.1;
-	globalBoundB = 2;
-
+	if (my_rank==0) {
+		printf("Gib die Grenze A ein:\n");
+		scanf("%lf",&globalBoundA);
+		printf("Gib die Grenze B ein:\n");
+		scanf("%lf",&globalBoundB);
+		printf("Bounds: %f > %f \n",globalBoundA,globalBoundB );
+	} 	
+	MPI_Bcast(&globalBoundA,1, MPI_DOUBLE,0,MPI_COMM_WORLD);
+	MPI_Bcast(&globalBoundB,1, MPI_DOUBLE,0,MPI_COMM_WORLD);
 	double diffAandB= globalBoundB-globalBoundA;
 	double chunkSizeOfPro = diffAandB / world_size;
 
@@ -123,25 +124,58 @@ int main(int argc, char *argv[])
 
 	// ------------------------------------------------------------[Para Part]--
 	int dataToSend=2;
+
+	double mpi_loopStart = MPI_Wtime();
 	for(int round = rounds-1; round>=0; round--){
 	    int second = (1 << round);
 	    int partnerRank= my_rank ^ second;
 		double dataArrayToSend[2]= {resultFunction1,resultFunction2};
 		double dataArrayToRev[2];
-        printf("ROUND(%d) Me(%d) call Partner(%d)\n", round, my_rank, partnerRank);
+        
+		int flag = 0;
+		MPI_Request request, request2;
+    	MPI_Status status;
 		
-		// TODO Wir benutzten Blocking kommunikation. Sollen aber non-blocking benutzten. Also muss hier ein anderes MPI-Modul benutzt werden.
-		// Hinweis: Wenn entschieden werden muss welche node sender und empfaenger ist --> der mit kleinem  Index emfaengt als erstes und sendet anschließend.
-		// Wenn index groeßer als vom partner, dann erst senden dann empfangen.
+		printf("ROUND(%d) Me(%d) call Partner(%d)\n", round, my_rank, partnerRank);
 		
+		
+		/*
 		MPI_Sendrecv(&dataArrayToSend, dataToSend, MPI_DOUBLE, partnerRank, round, &dataArrayToRev, dataToSend, MPI_DOUBLE, partnerRank, round, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+		*/
+		if(my_rank<partnerRank){
+		MPI_Isend(dataArrayToSend, dataToSend, MPI_DOUBLE, partnerRank, 123, MPI_COMM_WORLD, &request2);
+		MPI_Irecv(dataArrayToRev, dataToSend, MPI_DOUBLE, partnerRank, 123, MPI_COMM_WORLD, &request);
+		}
+		else{
+		MPI_Irecv(dataArrayToRev, dataToSend, MPI_DOUBLE, partnerRank, 123, MPI_COMM_WORLD, &request);
+		MPI_Isend(dataArrayToSend, dataToSend, MPI_DOUBLE, partnerRank, 123, MPI_COMM_WORLD, &request2);
+		}
+
+		 MPI_Test(&request, &flag, &status);
+		 
+		 double mpi_ideleTimeStart = MPI_Wtime();
+   		 while (!flag)
+    	{
+			idleOperations++;
+        // order pizza, sandwiches or ice -cream ..:) 
+        MPI_Test(&request, &flag, &status);
+    	}
+		double mpi_idleTimeEnd = MPI_Wtime();
+    	idleTime += mpi_idleTimeEnd-mpi_ideleTimeStart;
+		MPI_Wait(&request, &status);
+    	MPI_Wait(&request2, &status);
+		/*
+		*/
 		resultFunction1 += dataArrayToRev[0];
 		resultFunction2 += dataArrayToRev[1];
 	}
+	 double mpi_loopEnd = MPI_Wtime();
 
 
 	// --------------------------------------------------------[Para Part END]--
 	double mpi_programEnd = MPI_Wtime();
+	double loopTimaAtAll= mpi_loopEnd-mpi_loopStart;
 
 	
 	
@@ -160,8 +194,7 @@ int main(int argc, char *argv[])
 	}
 	MPI_Barrier(MPI_COMM_WORLD);
 	usleep(100);
-
-	printf("[Node %d] (A)=%f (B)=%f \n", my_rank, resultFunction1, resultFunction2);
+	printf("[Node %d] (A)=%f (B)=%f  loopTime(%f) IdleOP's(%f) IdleTime(%f)\n", my_rank, resultFunction1, resultFunction2, loopTimaAtAll, idleOperations, idleTime);
 
 	
 	MPI_Buffer_detach((void *)buffer, &bsize);
