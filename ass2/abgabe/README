@@ -1,0 +1,23 @@
+Example calls:
+
+Start task: 
+mpicc -o ./app1 ./ass2_mpiRomberg.c  && mpiexec -f ./hosts  -n 8 ./app1
+
+
+Result:
+--------------------- RESULT
+boundaries: 0.100000 -> 2.000000  | steps = 11
+A:=log(7 * x) / x       | B:=sqrt((3 * x) + 2)
+(A)=3.418703 (B)=4.253177
+
+--------------------- MES
+[Node 5] Ia=1.287500 Ie=1.525000 steps=11 (A)=3.418703 (B)=4.253177  loopTime(0.001360) IdleOP's(1208.000000) IdleTime(0.000698)
+[Node 3] Ia=0.812500 Ie=1.050000 steps=11 (A)=3.418703 (B)=4.253177  loopTime(0.001295) IdleOP's(949.000000) IdleTime(0.000620)
+[Node 7] Ia=1.762500 Ie=2.000000 steps=11 (A)=3.418703 (B)=4.253177  loopTime(0.001361) IdleOP's(957.000000) IdleTime(0.000685)
+[Node 0] Ia=0.100000 Ie=0.337500 steps=11 (A)=3.418703 (B)=4.253177  loopTime(0.000566) IdleOP's(306.000000) IdleTime(0.000358)
+[Node 6] Ia=1.525000 Ie=1.762500 steps=11 (A)=3.418703 (B)=4.253177  loopTime(0.001397) IdleOP's(1781.000000) IdleTime(0.000957)
+[Node 4] Ia=1.050000 Ie=1.287500 steps=11 (A)=3.418703 (B)=4.253177  loopTime(0.001364) IdleOP's(2543.000000) IdleTime(0.001306)
+[Node 2] Ia=0.575000 Ie=0.812500 steps=11 (A)=3.418703 (B)=4.253177  loopTime(0.001328) IdleOP's(1813.000000) IdleTime(0.001048)
+[Node 1] Ia=0.337500 Ie=0.575000 steps=11 (A)=3.418703 (B)=4.253177  loopTime(0.001219) IdleOP's(1001.000000) IdleTime(0.000668)
+
+------------------------------------------------------------------------------------------------------------------------------------
