@@ -45,25 +45,24 @@ int main(int argc, char *argv[])
     int blocksToHandle = dimOfMatrix / world_size;
     int elemsToHandle = dimOfMatrix * blocksToHandle;
     int pushIndexByRank = my_rank * blocksToHandle;
-    //xprintf("dimOfMatrix (%d) blocksToHandle (%d) indexToPushBy(%d) elemsToHandle(%d)\n", dimOfMatrix, blocksToHandle, pushIndexByRank, elemsToHandle);
-    // Matrix  -- LOADED
 
+    // Matrix  -- LOAD
     double bufferMatrix[elemsToHandle];
     MPI_File_read_ordered(fhandle, bufferMatrix, elemsToHandle, MPI_DOUBLE, MPI_STATUS_IGNORE);
     MPI_File_close(&fhandle);
-    //xprintf("HARD MATRIX ENTRY  (%f)\n", bufferMatrix[0]);
 
-    // Vector B -- LOADED
+    // Vector B -- LOAD
     double bufferVector[dimOfMatrix];
     MPI_File_open(MPI_COMM_WORLD, pathToVector, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);
     MPI_File_read(fhandle, bufferVector, dimOfMatrix, MPI_DOUBLE, MPI_STATUS_IGNORE);
     MPI_File_close(&fhandle);
 
-    // Vector X -- CREATED
+    // Vector X -- CREAT
     double xVector[dimOfMatrix];
     for (int i = 0; i < dimOfMatrix; i++)
         xVector[i] = 1;
 
+    // Creates 2d-matrix.
     double matrixs[blocksToHandle][dimOfMatrix];
     int i = 0;
     for (int row = 0; row < blocksToHandle; ++row)
@@ -75,13 +74,9 @@ int main(int argc, char *argv[])
         }
     }
 
-    /*
-    */
     int isLocalPartDDM = 1;
     for (int xx = 0; xx < world_size; xx++)
     {
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
         if (my_rank == xx)
         {
             for (int x = 0; x < blocksToHandle; x++)
@@ -113,11 +108,11 @@ int main(int argc, char *argv[])
             }
             if (isLocalPartDDM == 0)
             {
-                //xprintf("[Node %d]Matrix is not dominant.\n", my_rank);
+                printf("[Node %d]Matrix is not dominant.\n", my_rank);
             }
             else
             {
-                //xprintf("[Node %d]Matrix is dominant.\n", my_rank);
+                printf("[Node %d]Matrix is dominant.\n", my_rank);
             }
         }
         //check if dominant END
@@ -125,23 +120,14 @@ int main(int argc, char *argv[])
         usleep(200);
     }
 
-    // checks if every part of the matrix fulfill the dd-requirement.
+    // checks if every part of the matrix fulfills the dd-requirement.
     int worldIsMatrixDD = 0;
     MPI_Allreduce(&isLocalPartDDM, &worldIsMatrixDD, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
     if (worldIsMatrixDD != world_size)
     {
-        if (my_rank == 0)
-        {
-        }
-        //xprintf("Some parts of the matrix doesn't fulfill the DD requirement.\nThe calculation process will stop.");
-    }
-    if (isLocalPartDDM == 0)
-    {
-        //xprintf("[Node %d] My part of the matrix doesn't fulfill the DD-requirement.\n");
+        printf("Some parts of the matrix doesn't fulfill the DD requirement.\nThe calculation process will stop now.");
         exit(1);
     }
-    //xprintf("\n\n");
-    //xprintf("Jacobi calc. starts.\n");
 
     // -----------------------------------------------------[ Jacobi - Part ]--
 
@@ -232,62 +218,83 @@ int main(int argc, char *argv[])
             }
             printf("\n");
         }
-        //xprintf("\n");
         if (difVectors_local < eps)
             loopFlag = 0;
 
-        //xprintf("Iteration done (%d)\n", iterCounter);
-        //xprintf("#\n");
-        //xprintf("#\n");
-        //xprintf("#\n");
-        //xprintf("#\n");
-        if (iterCounter >= 15000000)
-        {
-            //xprintf("ERROR, aborting calculations\n", iterCounter);
-            loopFlag = 0;
-        }
         iterCounter++;
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(500);
-        if (iterCounter == stopAtThisNumber)
+
+        if (iterCounter >= stopAtThisNumber)
+        {
+            printf("ERROR, aborting calculations\n", iterCounter);
+            loopFlag = 0;
             exit(1);
-        /*for (int xx = 0; xx < world_size; xx++)
-                        { //--big
-                            if (my_rank == xx)
-                            { //--inner
-                            } //--inner
-                        }     //--big
-                        */
+        }
     }
 
-    //int isFinish = calcDif(0.01, bufferVector, xVector, dimOfMatrix);
-    ////xprintf("Calculation is finished (%d)\n", isFinish);
-    //print output. *vector print should be easy
+    // -------------------------------------------------------[ Save result ]--
+    char *pathToResultFile = "./res";
+    err = MPI_File_open(MPI_COMM_WORLD, pathToResultFile, MPI_MODE_RDWR | MPI_MODE_CREATE, MPI_INFO_NULL, &fhandle);
+    if (err)
+    {
+        MPI_Abort(MPI_COMM_WORLD, 911);
+    }
+    double me = 10;
+    double buf[blocksToHandle];
+    for (int index = 0; index < blocksToHandle; index++)
+    {
+        buf[index] = xVector[index + pushIndexByRank];
+        printf("saved %f \n", xVector[index + pushIndexByRank]);
+    }
+
+    err = MPI_File_write_ordered(fhandle, &buf, blocksToHandle, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    if (err)
+    {
+        printf("Error writing to file. \n");
+    }
+    MPI_File_close(&fhandle);
+
+    // ------------------------------------------------------[ print Result ]--
+    if (my_rank == 0)
+    {
+        printf("\n");
+        printf("\n");
+        printf("\n");
+        printf("\n");
+        printf("----------------------------------------------[ Result ]--\n");
+        printf("Result-vector: \n");
+        for (int x = 0; x < dimOfMatrix; x++)
+        {
+            printf("%8f ", xVector[x]);
+        }
+        printf("\n");
+    }
+
+    // -----------------------------------------------------[ reload Result ]--
+    // Vector Result -- LOAD
+    double result[dimOfMatrix];
+    MPI_File_open(MPI_COMM_WORLD, pathToResultFile, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);
+    MPI_File_read(fhandle, &result, dimOfMatrix, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    MPI_File_close(&fhandle);
+
+    if (my_rank == 0)
+    {
+        printf("Result (reloaded): \n");
+        for (int s = 0; s < dimOfMatrix; s++)
+        {
+            printf("%f ", result[s]);
+        }
+        printf("\n");
+    }
 
     MPI_Finalize(); // finalizing MPI interface
 }
 
 double calcDif(double xOld[], double xNew[], int numberOfCols)
 {
-    //xprintf("Compareing vectors\n");
-    //xprintf("Vector 01 = ");
-    for (int i = 0; i < numberOfCols; i++)
-    {
-        //xprintf("%f ", xOld[i]);
-    }
-    //xprintf("\n");
-    //xprintf("Vector 01 = ");
-    for (int i = 0; i < numberOfCols; i++)
-    {
-        //xprintf("%f ", xNew[i]);
-    }
-    //xprintf("\n");
     int isFinish = 0;
     double dis = 0;
     dis = distanceV(xOld, xNew, numberOfCols);
     int Digs = DECIMAL_DIG;
-    //xprintf("[node (%d)] -- distance (%.*e)\n", my_rank, Digs, dis);
-
     return dis;
 }
 
@@ -295,44 +302,9 @@ double distanceV(double xOld[], double xNew[], int numberOfCols)
 {
     double sum = 0;
     for (int i = 0; i < numberOfCols; i++)
-    {
         sum = sum + (xOld[i] - xNew[i]) * (xOld[i] - xNew[i]);
-    }
     return sqrt(sum);
 }
-
-/**
- * @brief 
- * Checks if a matrix is dominant.
- * 
- * source: 
- * https://www.geeksforgeeks.org/diagonally-dominant-matrix/
- * 
- * @param m  Matrix m.
- * @param n Dimension of matrix.
- * @return int  1- if dominant
-int isLocalPartDDM(double m[i][j], int n)
-{
-    // for each row
-    for (int i = 0; i < n; i++)
-    {
-
-        // for each column, finding sum of each row.
-        int sum = 0;
-        for (int j = 0; j < n; j++)
-            sum += abs(m[i][j]);
-
-        // removing the diagonal element.
-        sum -= abs(m[i][i]);
-
-        // checking if diagonal element is less
-        // than sum of non-diagonal element.
-        if (abs(m[i][i]) < sum)
-            return 0;
-    }
-    return 1;
-}
- */
 
 /**
  * @brief Prints the help message. Only root (rank=0) will print the message.
