@@ -132,75 +132,96 @@ int main(int argc, char *argv[])
     //start calc.  *could be ripped
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
-    for (int xx = 0; xx < world_size; xx++)
+    int resultGoodEnough = 0;
+    int iterCounter = 0;
+    while (resultGoodEnough == 0)
     {
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(500);
-        double tempX[dimOfMatrix];
-        for (int x = 0; x < dimOfMatrix; x++)
-            tempX[x] = 0;
 
-        if (my_rank == xx)
+        for (int xx = 0; xx < world_size; xx++)
         {
-
-            printf("\n\n");
-            printf("[Node %d]\n", my_rank);
-            printf("\n\n");
-            for (int i = 0; i < blocksToHandle; i++)
-            {
-                //   int pushIndexByRank = my_rank * blocksToHandle;
-                int myIndex = i + pushIndexByRank;
-
-                //Prints temp_x
-
-                printf("My Push (%d)\n", pushIndexByRank);
-                printf("Iteration (%d) need to take index (%d)\n", i, myIndex);
-
-                printf("Starting calculation of row [%d]\n", i);
-                //double entry_a = matrixs[myIndex][myIndex];
-
-                for (int lr = 0; lr < blocksToHandle; lr++)
-                {
-                    printf("-- Row [%d | %d] ", lr, (lr + (pushIndexByRank)));
-                    for (int lc = 0; lc < dimOfMatrix; lc++)
-                    {
-                        // printf("%f|%f ", matrixs[lr][lc], bufferMatrix[lr * dimOfMatrix + lc]);
-                        printf("%f ", matrixs[lr][lc]);
-                    }
-                    printf("\n");
-                }
-
-                double entry_a = matrixs[i][myIndex];
-                double entry_b = bufferVector[myIndex];
-
-                double firstSum = 0;
-                for (int a = 0; a < (i - 1); a++)
-                {
-                    firstSum += matrixs[i][a] * xVector[a];
-                }
-                double secondSum = 0;
-                for (int a = (i + 1); a <= dimOfMatrix; a++)
-                {
-                    secondSum += matrixs[i][a] * xVector[a];
-                }
-                double valueOfBrace = entry_b - firstSum - secondSum;
-                double componentValue = (1 / entry_a) * valueOfBrace;
-                printf("entry a: < %f > entry b: < %f > firstSum: < %f > secondSum < %f >\n", entry_a, entry_b, firstSum, secondSum);
-                printf("valueOfBrace: < %f > componentValue: < %f >\n", valueOfBrace, componentValue);
-                tempX[myIndex] = componentValue;
-            }
-
-            printf("\n");
-            printf("END Vector X Temp \n");
+            MPI_Barrier(MPI_COMM_WORLD);
+            usleep(500);
+            double tempX[dimOfMatrix];
             for (int x = 0; x < dimOfMatrix; x++)
-                printf("%f ", tempX[x]);
-            printf("\n");
-            printf("\n");
+                tempX[x] = 0;
 
-            //collect all x'vectors
+            if (my_rank == xx)
+            {
+
+                printf("\n\n");
+                printf("[Node %d]\n", my_rank);
+                printf("\n\n");
+                for (int i = 0; i < blocksToHandle; i++)
+                {
+                    //   int pushIndexByRank = my_rank * blocksToHandle;
+                    int myIndex = i + pushIndexByRank;
+
+                    //Prints temp_x
+
+                    printf("My Push (%d)\n", pushIndexByRank);
+                    printf("Iteration (%d) need to take index (%d)\n", i, myIndex);
+
+                    printf("Starting calculation of row [%d]\n", i);
+                    //double entry_a = matrixs[myIndex][myIndex];
+
+                    for (int lr = 0; lr < blocksToHandle; lr++)
+                    {
+                        printf("-- Row [%d | %d] ", lr, (lr + (pushIndexByRank)));
+                        for (int lc = 0; lc < dimOfMatrix; lc++)
+                        {
+                            // printf("%f|%f ", matrixs[lr][lc], bufferMatrix[lr * dimOfMatrix + lc]);
+                            printf("%f ", matrixs[lr][lc]);
+                        }
+                        printf("\n");
+                    }
+
+                    double entry_a = matrixs[i][myIndex];
+                    double entry_b = bufferVector[myIndex];
+
+                    double firstSum = 0;
+                    for (int a = 0; a < i; a++)
+                    {
+                        firstSum += matrixs[i][a] * xVector[a];
+                    }
+                    double secondSum = 0;
+                    for (int a = (i + 1); a < dimOfMatrix; a++)
+                    {
+                        secondSum += matrixs[i][a] * xVector[a];
+                    }
+                    double valueOfBrace = entry_b - firstSum - secondSum;
+                    double componentValue = (1 / entry_a) * valueOfBrace;
+                    printf("entry a: < %f > entry b: < %f > firstSum: < %f > secondSum < %f >\n", entry_a, entry_b, firstSum, secondSum);
+                    printf("valueOfBrace: < %f > componentValue: < %f >\n", valueOfBrace, componentValue);
+                    tempX[myIndex] = componentValue;
+                }
+
+                printf("\n");
+                printf("END Vector X Temp \n");
+                for (int x = 0; x < dimOfMatrix; x++)
+                    printf("%8f ", tempX[x]);
+                printf("\n");
+                printf("\n");
+
+                //collect all x'vectors
+            }
+            resultGoodEnough = isCalcFinish(0.0000000000000000001, xVector, tempX, dimOfMatrix);
+            for (int elemIter = 0; elemIter < dimOfMatrix; elemIter++)
+                xVector[elemIter] = tempX[elemIter];
+
+            printf("Iteration done (%d)\n", iterCounter);
+            printf("#\n");
+            printf("#\n");
+            printf("#\n");
+            printf("#\n");
+            if (iterCounter >= 15000000)
+            {
+                printf("ERROR, aborting calculations\n", iterCounter);
+                resultGoodEnough = 1;
+            }
+            iterCounter++;
+            MPI_Barrier(MPI_COMM_WORLD);
+            usleep(500);
         }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(500);
     }
 
     //int isFinish = isCalcFinish(0.01, bufferVector, xVector, dimOfMatrix);
@@ -212,6 +233,19 @@ int main(int argc, char *argv[])
 
 int isCalcFinish(double eps, double xOld[], double xNew[], int numberOfCols)
 {
+    printf("Compareing vectors\n");
+    printf("Vector 01 = ");
+    for (int i = 0; i < numberOfCols; i++)
+    {
+        printf("%f ", xOld[i]);
+    }
+    printf("\n");
+    printf("Vector 01 = ");
+    for (int i = 0; i < numberOfCols; i++)
+    {
+        printf("%f ", xNew[i]);
+    }
+    printf("\n");
     int isFinish = 0;
     double dis = 0;
     dis = distanceV(xOld, xNew, numberOfCols);
