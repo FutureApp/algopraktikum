@@ -42,13 +42,15 @@ int main(int argc, char *argv[])
 
     int dimOfMatrix = sqrt(fsize / sizeof(double));
     int blocksToHandle = dimOfMatrix / world_size;
-
+    int elemsToHandle = dimOfMatrix * blocksToHandle;
     int pushIndexByRank = my_rank * blocksToHandle;
+    printf("dimOfMatrix (%d) blocksToHandle (%d) indexToPushBy(%d) elemsToHandle(%d)\n", dimOfMatrix, blocksToHandle, pushIndexByRank, elemsToHandle);
+    // Matrix  -- LOADED
 
-    // Vector X -- CREATED
-    double xVector[dimOfMatrix];
-    for (int i = 0; i < dimOfMatrix; i++)
-        xVector[i] = 1;
+    double bufferMatrix[elemsToHandle];
+    MPI_File_read_ordered(fhandle, bufferMatrix, elemsToHandle, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    MPI_File_close(&fhandle);
+    printf("HARD MATRIX ENTRY  (%f)\n", bufferMatrix[0]);
 
     // Vector B -- LOADED
     double bufferVector[dimOfMatrix];
@@ -56,14 +58,10 @@ int main(int argc, char *argv[])
     MPI_File_read(fhandle, bufferVector, dimOfMatrix, MPI_DOUBLE, MPI_STATUS_IGNORE);
     MPI_File_close(&fhandle);
 
-    // Matrix  -- LOADED
-    int elemsToHandle = dimOfMatrix * blocksToHandle;
-    printf("dimOfMatrix (%d) blocksToHandle (%d) indexToPushBy(%d) elemsToHandle(%d)\n", dimOfMatrix, blocksToHandle, pushIndexByRank, elemsToHandle);
-
-    double bufferMatrix[64];
-    err = MPI_File_read_ordered(fhandle, bufferMatrix, elemsToHandle, MPI_DOUBLE, MPI_STATUS_IGNORE);
-    MPI_File_close(&fhandle);
-    printf("HARD MATRIX ENTRY  (%f)\n", bufferMatrix[0]);
+    // Vector X -- CREATED
+    double xVector[dimOfMatrix];
+    for (int i = 0; i < dimOfMatrix; i++)
+        xVector[i] = 1;
 
     double matrixs[blocksToHandle][dimOfMatrix];
     int i = 0;
@@ -77,6 +75,7 @@ int main(int argc, char *argv[])
     }
 
     /*
+    */
     int isDDM = 1;
     //Checks if matrix is dominant.
     for (int xx = 0; xx < world_size; xx++)
@@ -122,16 +121,6 @@ int main(int argc, char *argv[])
         usleep(200);
     }
 
-    for (int lr = 0; lr < dimOfMatrix; lr++)
-    {
-        printf("-C2- Row [%d] ", lr);
-        for (int lc = 0; lc < dimOfMatrix; lc++)
-        {
-            printf("%f ", matrixs[lr][lc]);
-        }
-        printf("\n");
-    }
-
     if (isDDM == 0)
     {
         printf("[Node %d] Part of matrix is not dominant. Calculation will be aborted.");
@@ -141,50 +130,64 @@ int main(int argc, char *argv[])
     printf("Calc starts.\n");
 
     //start calc.  *could be ripped
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
     for (int xx = 0; xx < world_size; xx++)
     {
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(500);
         double tempX[dimOfMatrix];
         for (int x = 0; x < dimOfMatrix; x++)
-            tempX[x] = 1;
+            tempX[x] = 0;
 
-        printf("Start Vector X Temp \n");
-        for (int x = 0; x < dimOfMatrix; x++)
-            printf("%f ", tempX[x]);
-        printf("\n");
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
         if (my_rank == xx)
         {
+
+            printf("\n\n");
+            printf("[Node %d]\n", my_rank);
+            printf("\n\n");
             for (int i = 0; i < blocksToHandle; i++)
             {
-                tempX[0] = 100;
+                //   int pushIndexByRank = my_rank * blocksToHandle;
                 int myIndex = i + pushIndexByRank;
 
                 //Prints temp_x
-                printf("\n\n");
 
                 printf("My Push (%d)\n", pushIndexByRank);
                 printf("Iteration (%d) need to take index (%d)\n", i, myIndex);
 
-                printf("Starting calculation of row [%d] ", i);
+                printf("Starting calculation of row [%d]\n", i);
                 //double entry_a = matrixs[myIndex][myIndex];
-                double entry_a = matrixs[myIndex][myIndex];
+
+                for (int lr = 0; lr < blocksToHandle; lr++)
+                {
+                    printf("-- Row [%d | %d] ", lr, (lr + (pushIndexByRank)));
+                    for (int lc = 0; lc < dimOfMatrix; lc++)
+                    {
+                        // printf("%f|%f ", matrixs[lr][lc], bufferMatrix[lr * dimOfMatrix + lc]);
+                        printf("%f ", matrixs[lr][lc]);
+                    }
+                    printf("\n");
+                }
+
+                double entry_a = matrixs[i][myIndex];
                 double entry_b = bufferVector[myIndex];
-                printf("entry a:%f entry b:%f", entry_a, entry_b);
 
                 double firstSum = 0;
-                for (int a = 0; a <= (i - 1); a++)
+                for (int a = 0; a < (i - 1); a++)
                 {
-                    firstSum += matrixs[myIndex][a] * xVector[a];
+                    firstSum += matrixs[i][a] * xVector[a];
                 }
                 double secondSum = 0;
                 for (int a = (i + 1); a <= dimOfMatrix; a++)
                 {
-                    secondSum += matrixs[myIndex][a] * xVector[a];
+                    secondSum += matrixs[i][a] * xVector[a];
                 }
                 double valueOfBrace = entry_b - firstSum - secondSum;
                 double componentValue = (1 / entry_a) * valueOfBrace;
-                tempX[myIndex];
+                printf("entry a: < %f > entry b: < %f > firstSum: < %f > secondSum < %f >\n", entry_a, entry_b, firstSum, secondSum);
+                printf("valueOfBrace: < %f > componentValue: < %f >\n", valueOfBrace, componentValue);
+                tempX[myIndex] = componentValue;
             }
 
             printf("\n");
@@ -192,11 +195,16 @@ int main(int argc, char *argv[])
             for (int x = 0; x < dimOfMatrix; x++)
                 printf("%f ", tempX[x]);
             printf("\n");
+            printf("\n");
+
+            //collect all x'vectors
         }
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(500);
     }
-    int isFinish = isCalcFinish(0.01, bufferVector, xVector, dimOfMatrix);
-    printf("Calculation is finished (%d)\n", isFinish);
-    */
+
+    //int isFinish = isCalcFinish(0.01, bufferVector, xVector, dimOfMatrix);
+    //printf("Calculation is finished (%d)\n", isFinish);
     //print output. *vector print should be easy
 
     MPI_Finalize(); // finalizing MPI interface
