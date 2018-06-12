@@ -50,16 +50,108 @@ int main(int argc, char *argv[])
     MPI_File_read(fhandle, bufferVector, dimOfMatrix, MPI_DOUBLE, MPI_STATUS_IGNORE);
     MPI_File_close(&fhandle);
 
-    //create dummy x vector
+    double matrixs[blocksToHandle][dimOfMatrix];
+    int i = 0;
+    for (int row = 0; row < blocksToHandle; ++row)
+    {
+        for (int col = 0; col < dimOfMatrix; ++col)
+        {
+            matrixs[row][col] = bufferMatrix[i];
+            i++;
+        }
+    }
+    int isDDM = 1;
+    //Checks if matrix is dominant.
+    for (int xx = 0; xx < world_size; xx++)
+    {
 
-    //check if dominant
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(200);
+        if (my_rank == xx)
+        {
+            for (int x = 0; x < blocksToHandle; x++)
+            {
+                printf("ROW [%d] ", x);
+                for (int y = 0; y < dimOfMatrix; y++)
+                {
+                    printf("%f ", matrixs[x][y]);
+                }
+                printf("\n");
+            }
 
-    //start calc.
+            //check if dominant START
+            int pushIndexByRank = my_rank * blocksToHandle;
+            for (int i = 0; i < blocksToHandle; i++)
+            {
+                int pushIBy = i + pushIndexByRank;
+                // for each column, finding sum of each row.
+                int sum = 0;
+                for (int j = 0; j < dimOfMatrix; j++)
+                    sum += abs(matrixs[i][j]);
 
-    //print output.
+                // removing the diagonal element.
+                sum -= abs(matrixs[i][pushIBy]);
+                // checking if diagonal element is less
+                // than sum of non-diagonal element.
+                if (abs(matrixs[i][pushIBy]) < sum)
+                    isDDM = 0;
+                printf("[Row of interest %d: Value (%f)]\n", i, matrixs[i][pushIBy]);
+            }
+            if (isDDM == 0)
+                printf("[Node %d]Matrix is not dominant.\n", my_rank);
+            else
+                printf("[Node %d]Matrix is dominant.\n", my_rank);
+        }
+        //check if dominant END
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(200);
+    }
+    if (isDDM == 0)
+    {
+        printf("[Node %d] Part of matrix is not dominant. Calculation will be aborted.");
+        exit(1);
+    }
+    //create dummy x vector *easy as hell
+
+    //start calc.  *could be ripped
+
+    //print output. *vector print should be easy
 
     MPI_Finalize(); // finalizing MPI interface
 }
+
+/**
+ * @brief 
+ * Checks if a matrix is dominant.
+ * 
+ * source: 
+ * https://www.geeksforgeeks.org/diagonally-dominant-matrix/
+ * 
+ * @param m  Matrix m.
+ * @param n Dimension of matrix.
+ * @return int  1- if dominant
+int isDDM(double m[i][j], int n)
+{
+    // for each row
+    for (int i = 0; i < n; i++)
+    {
+
+        // for each column, finding sum of each row.
+        int sum = 0;
+        for (int j = 0; j < n; j++)
+            sum += abs(m[i][j]);
+
+        // removing the diagonal element.
+        sum -= abs(m[i][i]);
+
+        // checking if diagonal element is less
+        // than sum of non-diagonal element.
+        if (abs(m[i][i]) < sum)
+            return 0;
+    }
+    return 1;
+}
+ */
 
 /**
  * @brief Prints the help message. Only root (rank=0) will print the message.
@@ -79,7 +171,6 @@ void h_rootPrintHelp(int my_rank)
         printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
     }
 }
-
 /**
  * @brief Check end sets the needed values.
  * 
@@ -137,31 +228,6 @@ void h_rootPrintMes(int my_rank, char *mes)
     }
 }
 
-/* Prints matrix 
-    for (int i = 0; i < world_size; i++)
-    {
-        if (my_rank == i)
-        {
-            printf("#%dr#\n", my_rank);
-            for (int x = 0; x < elemsToHandle; x++)
-            {
-                if ((x % dimOfMatrix == 0) && (x != 0))
-                {
-                    printf("|\n");
-                    printf("%f ", buffer[x]);
-                }
-                else
-                {
-                    printf("%f ", buffer[x]);
-                }
-            }
-            printf("|\n");
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
-    }
-    */
-
 /* Prints vector 
     for (int i = 0; i < world_size; i++)
     {
@@ -178,6 +244,30 @@ void h_rootPrintMes(int my_rank, char *mes)
                 else
                 {
                     printf("%f ", bufferVector[x]);
+                }
+            }
+            printf("|\n");
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(200);
+    }
+    */
+/* Prints matrix 
+    for (int i = 0; i < world_size; i++)
+    {
+        if (my_rank == i)
+        {
+            printf("#%dr#\n", my_rank);
+            for (int x = 0; x < elemsToHandle; x++)
+            {
+                if ((x % dimOfMatrix == 0) && (x != 0))
+                {
+                    printf("|\n");
+                    printf("%f ", bufferMatrix[x]);
+                }
+                else
+                {
+                    printf("%f ", bufferMatrix[x]);
                 }
             }
             printf("|\n");
