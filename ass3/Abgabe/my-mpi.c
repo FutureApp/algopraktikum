@@ -1,3 +1,14 @@
+/***********************************************************************
+ Program: my-mpi-jacobi.c
+ Author: Michael Czaja, Muttaki Aslanparcasi
+ matriclenumber: 4293033, 5318807
+ Assignment : 3
+ Task: 1-2
+
+ Description:
+MPI program that solves a set of linear equations Ax = b with the Jacobi method that
+converges if the distance between the vectors x^(k) and x^(k+1) is small enough.
+/************************************************************************/
 
 #include <stdio.h>
 #include "mpi.h"
@@ -9,13 +20,15 @@
 #include <unistd.h>
 
 void h_rootPrintHelp(int my_rank);
+void h_rootPrintMes(int my_rank, char *mes);
 void h_setAndCheckParams(int argc, char *argv[]);
 
+//These are parameters which should be intialized on calling
 char *pathToMatrix; // IN - -pm
 char *pathToVector; // IN - -pv
 double eps;         // IN - -eps
 
-int my_rank, world_size; //MPI-STUFF
+int my_rank, world_size; //MPI-Variables
 
 double distanceV(double xOld[], double xNew[], int numberOfCols);
 double calcDif(double xOld[], double xNew[], int numberOfCols);
@@ -23,7 +36,7 @@ double calcDif(double xOld[], double xNew[], int numberOfCols);
 int main(int argc, char *argv[])
 {
     MPI_Init(&argc, &argv);                  // initializing of MPI-Interface
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //get your rank
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //	get your rank
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
     // checks and sets the parameter.
@@ -34,142 +47,27 @@ int main(int argc, char *argv[])
     MPI_Offset fsize;
 
     int err = 0;
-    // root loads the data
+    err = MPI_File_open(MPI_COMM_WORLD, pathToMatrix, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);    //INPUT MATRIX
+    err = MPI_File_get_size(fhandle, &fsize);
 
-    int dimOfMatrix = 1;
-    int blocksToHandle = 1;
-    int elemsToHandle = 1;
-    int pushIndexByRank = 0;
+    if (fsize == 0)
+        h_rootPrintMes(my_rank, "Nothing to do. Size of file is 0.\n"); //If File is empty
 
-    if (my_rank == 0) // --- root part (load) Start
-    {
-        err = MPI_File_open(MPI_COMM_SELF, pathToMatrix, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);
-        err = MPI_File_get_size(fhandle, &fsize);
+    int dimOfMatrix = sqrt(fsize / sizeof(double));
+    int blocksToHandle = dimOfMatrix / world_size;
+    int elemsToHandle = dimOfMatrix * blocksToHandle;
+    int pushIndexByRank = my_rank * blocksToHandle;
 
-        if (fsize == 0)
-        {
-            printf("[Node (%d)] File has size of 0. Nothing to do! Calculation will stop.\n", my_rank);
-            exit(1);
-        }
-        dimOfMatrix = sqrt(fsize / sizeof(double));
-    }
+    // Matrix  -- LOAD
+    double bufferMatrix[elemsToHandle];
+    MPI_File_read_ordered(fhandle, bufferMatrix, elemsToHandle, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    MPI_File_close(&fhandle);
 
-    MPI_Bcast(&dimOfMatrix, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-    // root sync elements
-
-    blocksToHandle = dimOfMatrix / world_size;
-    double bufferMatrix[dimOfMatrix * dimOfMatrix];
+    // Vector B -- LOAD
     double bufferVector[dimOfMatrix];
-
-    //zeros all entry's  DEBUG
-    for (int i = 0; i < dimOfMatrix * dimOfMatrix; i++)
-        bufferMatrix[i] = 0;
-    for (int i = 0; i < dimOfMatrix; i++)
-        bufferVector[i] = 0;
-
-    for (int i = 0; i < world_size; i++)
-    {
-        if (my_rank == i)
-            printf("[node %d] (Dim=%d)(Blocks=%d).\n", my_rank, dimOfMatrix, blocksToHandle);
-    }
-
-    if (my_rank == 0) // --- root part (load) Start
-    {
-        int blocksToHandle_root = dimOfMatrix;
-        // important for later steps (snyc with all nodes);
-        elemsToHandle = dimOfMatrix * blocksToHandle_root;
-        pushIndexByRank = my_rank * blocksToHandle_root;
-        printf("[node %d] dimMatrix(%d) blocksToHandle_root(%d) elemsToHandle(%d) pushIndexByRank(%d)\n", my_rank, dimOfMatrix, blocksToHandle_root, elemsToHandle, pushIndexByRank);
-
-        // Matrix  -- LOAD
-        MPI_File_read_ordered(fhandle, bufferMatrix, elemsToHandle, MPI_DOUBLE, MPI_STATUS_IGNORE);
-        MPI_File_close(&fhandle);
-
-        // Vector B -- LOAD
-        MPI_File_open(MPI_COMM_SELF, pathToVector, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);
-        MPI_File_read(fhandle, bufferVector, dimOfMatrix, MPI_DOUBLE, MPI_STATUS_IGNORE);
-        MPI_File_close(&fhandle);
-
-        printf("#%dr#\n", my_rank);
-        for (int x = 0; x < elemsToHandle; x++)
-        {
-            if ((x % dimOfMatrix == 0) && (x != 0))
-            {
-                printf("|\n");
-                printf("%f ", bufferMatrix[x]);
-            }
-            else
-            {
-                printf("%f ", bufferMatrix[x]);
-            }
-        }
-        // prints root B
-        printf("|\n");
-        if (my_rank == 0)
-        {
-            printf("[node %d [vecB01]] ", my_rank);
-            for (int i = 0; i < 8; i++)
-            {
-                printf(" %f ", bufferVector[i]);
-            }
-            printf("|\n");
-        }
-        printf("\n");
-    } // --- root part (load) END
-
-    if (my_rank == 0)
-    {
-        printf("[node %d [vecB02]] ", my_rank);
-        for (int i = 0; i < 8; i++)
-        {
-            printf(" %f ", bufferVector[i]);
-        }
-        printf("\n");
-    }
-
-    /*
-    MPI_Scatter(void *send_data, int send_count, MPI_Datatype send_datatype, void *recv_data, int recv_count, MPI_Datatype recv_datatype, int root, MPI_Comm communicator);
-    MPI_Scatter(rand_nums, elements_per_proc, MPI_FLOAT, sub_rand_nums,
-                elements_per_proc, MPI_FLOAT, 0, MPI_COMM_WORLD);
-    MPI_Scatter(m, elements_per_proc, MPI_DOUBLE, sub_rand_nums,
-                elements_per_proc, MPI_FLOAT, 0, MPI_COMM_WORLD);
-
-    */
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(1500);
-    for (int i = 0; i < world_size; i++)
-    {
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
-        if (my_rank == i)
-        {
-            printf("#%dr#\n", my_rank);
-            for (int x = 0; x < (dimOfMatrix * dimOfMatrix); x++)
-            {
-                if ((x % dimOfMatrix == 0) && (x != 0))
-                {
-                    printf("|\n");
-                    printf("%f ", bufferMatrix[x]);
-                }
-                else
-                {
-                    printf("%f ", bufferMatrix[x]);
-                }
-            }
-            printf("|\n");
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
-    }
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    printf("[node %d] ExEnd.\n", my_rank);
-    /* Start HIT 
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(500);
-    exit(1);
+    MPI_File_open(MPI_COMM_WORLD, pathToVector, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);
+    MPI_File_read(fhandle, bufferVector, dimOfMatrix, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    MPI_File_close(&fhandle);
 
     // Vector X -- CREAT
     double xVector[dimOfMatrix];
@@ -346,7 +244,7 @@ int main(int argc, char *argv[])
     }
 
     // -------------------------------------------------------[ Save result ]--
-    char *pathToResultFile = "./res";
+    char *pathToResultFile = "./res";  //PATH were to save
     err = MPI_File_open(MPI_COMM_WORLD, pathToResultFile, MPI_MODE_RDWR | MPI_MODE_CREATE, MPI_INFO_NULL, &fhandle);
     if (err)
     {
@@ -400,7 +298,6 @@ int main(int argc, char *argv[])
         printf("\n");
     }
 
-    HIT END*/
     MPI_Finalize(); // finalizing MPI interface
 }
 
@@ -430,13 +327,14 @@ void h_rootPrintHelp(int my_rank)
 {
     if (my_rank == 0)
     {
-        //xprintf("------------------------------------[ HELP ]\n");
-        //xprintf("*Parameter -m <path to matrix>   :    Path to file containing the matrix-entrys.\n");
-        //xprintf("*Parameter -v <path to vector>   :    Path to file containing the vector-entrys.\n");
-        //xprintf("*Parameter -e <number as double>:     Specifies epsilon. Need to be double. \n");
-        //xprintf("\n");
-        //xprintf("Example call:\n");
-        //xprintf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
+        printf("------------------------------------[ HELP ]-----------------------------------\n");
+        printf("*Parameter -m <path to matrix>   :    Path to file containing the matrix-entrys.\n");
+        printf("*Parameter -v <path to vector>   :    Path to file containing the vector-entrys.\n");
+        printf("*Parameter -e <number as double>:     Specifies epsilon. Need to be double. \n");
+        printf("\n");
+        printf("Example call:\n");
+        printf("mpicc -o ./app1 ./my-mpi.c && mpiexec -f ./hosts -n 5 ./app1 -m Matrix_A_8x8 -v Vector_b_8x -e 0.0000000001\n");
+        printf("------------------------------------[ END ]-----------------------------------\n");
     }
 }
 /**
@@ -494,66 +392,10 @@ void h_setAndCheckParams(int argc, char *argv[])
     for (index = optind; index < argc; index++)
         printf("Non-option argument %s\n", argv[index]);
 }
-
-/* Prints vector 
-    for (int i = 0; i < world_size; i++)
+void h_rootPrintMes(int my_rank, char *mes)
+{
+    if (my_rank == 0)
     {
-        if (my_rank == i)
-        {
-            printf("#%dr#\n", my_rank);
-            for (int x = 0; x < dimOfMatrix; x++)
-            {
-                if ((x % dimOfMatrix == 0) && (x != 0))
-                {
-                    printf("|\n");
-                    printf("%f ", bufferVector[x]);
-                }
-                else
-                {
-                    printf("%f ", bufferVector[x]);
-                }
-            }
-            printf("|\n");
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
+        printf("%s\n", mes);
     }
-    */
-/* Prints matrix 
-    for (int i = 0; i < world_size; i++)
-    {
-        if (my_rank == i)
-        {
-            printf("#%dr#\n", my_rank);
-            for (int x = 0; x < elemsToHandle; x++)
-            {
-                if ((x % dimOfMatrix == 0) && (x != 0))
-                {
-                    printf("|\n");
-                    printf("%f ", bufferMatrix[x]);
-                }
-                else
-                {
-                    printf("%f ", bufferMatrix[x]);
-                }
-            }
-            printf("|\n");
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
-    }
-    */
-
-/*Prints B
-    printf("Vector B\n");
-    for (int i = 0; i < dimOfMatrix; i++)
-        printf("%f ", bufferVector[i]);
-    printf("\n\n");
-    * /
-
-/*Prints X
-    printf("Vector X\n");
-    for (int i = 0; i < dimOfMatrix; i++)
-        printf("%f ", xVector[i]);
-    printf("\n\n");
-*/
+}

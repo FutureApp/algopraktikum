@@ -1,3 +1,14 @@
+/***********************************************************************
+ Program: my-mpi-jacobi.c
+ Author: Michael Czaja, Muttaki Aslanparcasi
+ matriclenumber: 4293033, 5318807
+ Assignment : 3
+ Task: 1-2
+
+ Description:
+MPI program that solves a set of linear equations Ax = b with the Jacobi method that
+converges if the distance between the vectors x^(k) and x^(k+1) is small enough.
+/************************************************************************/
 
 #include <stdio.h>
 #include "mpi.h"
@@ -12,11 +23,12 @@ void h_rootPrintHelp(int my_rank);
 void h_rootPrintMes(int my_rank, char *mes);
 void h_setAndCheckParams(int argc, char *argv[]);
 
+//These are parameters which should be intialized on calling
 char *pathToMatrix; // IN - -pm
 char *pathToVector; // IN - -pv
 double eps;         // IN - -eps
 
-int my_rank, world_size; //MPI-STUFF
+int my_rank, world_size; //MPI-Variables
 
 double distanceV(double xOld[], double xNew[], int numberOfCols);
 double calcDif(double xOld[], double xNew[], int numberOfCols);
@@ -24,7 +36,7 @@ double calcDif(double xOld[], double xNew[], int numberOfCols);
 int main(int argc, char *argv[])
 {
     MPI_Init(&argc, &argv);                  // initializing of MPI-Interface
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //get your rank
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //	get your rank
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
     // checks and sets the parameter.
@@ -35,11 +47,11 @@ int main(int argc, char *argv[])
     MPI_Offset fsize;
 
     int err = 0;
-    err = MPI_File_open(MPI_COMM_WORLD, pathToMatrix, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);
+    err = MPI_File_open(MPI_COMM_WORLD, pathToMatrix, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);    //INPUT MATRIX
     err = MPI_File_get_size(fhandle, &fsize);
 
     if (fsize == 0)
-        h_rootPrintMes(my_rank, "Nothing to do. Size of file is 0.\n");
+        h_rootPrintMes(my_rank, "Nothing to do. Size of file is 0.\n"); //If File is empty
 
     int dimOfMatrix = sqrt(fsize / sizeof(double));
     int blocksToHandle = dimOfMatrix / world_size;
@@ -232,7 +244,7 @@ int main(int argc, char *argv[])
     }
 
     // -------------------------------------------------------[ Save result ]--
-    char *pathToResultFile = "./res";
+    char *pathToResultFile = "./res";  //PATH were to save
     err = MPI_File_open(MPI_COMM_WORLD, pathToResultFile, MPI_MODE_RDWR | MPI_MODE_CREATE, MPI_INFO_NULL, &fhandle);
     if (err)
     {
@@ -315,13 +327,13 @@ void h_rootPrintHelp(int my_rank)
 {
     if (my_rank == 0)
     {
-        //xprintf("------------------------------------[ HELP ]\n");
-        //xprintf("*Parameter -m <path to matrix>   :    Path to file containing the matrix-entrys.\n");
-        //xprintf("*Parameter -v <path to vector>   :    Path to file containing the vector-entrys.\n");
-        //xprintf("*Parameter -e <number as double>:     Specifies epsilon. Need to be double. \n");
-        //xprintf("\n");
-        //xprintf("Example call:\n");
-        //xprintf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
+        printf("------------------------------------[ HELP ]\n");
+        printf("*Parameter -m <path to matrix>   :    Path to file containing the matrix-entrys.\n");
+        printf("*Parameter -v <path to vector>   :    Path to file containing the vector-entrys.\n");
+        printf("*Parameter -e <number as double>:     Specifies epsilon. Need to be double. \n");
+        printf("\n");
+        printf("Example call:\n");
+        printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
     }
 }
 /**
@@ -383,7 +395,7 @@ void h_rootPrintMes(int my_rank, char *mes)
 {
     if (my_rank == 0)
     {
-        //xprintf("%s\n", mes);
+//        xprintf("%s\n", mes);
     }
 }
 
