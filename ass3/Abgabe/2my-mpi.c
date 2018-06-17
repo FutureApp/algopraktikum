@@ -22,7 +22,6 @@ double calcDif(double xOld[], double xNew[], int numberOfCols);
 
 int main(int argc, char *argv[])
 {
-    int i;
     MPI_Init(&argc, &argv);                  // initializing of MPI-Interface
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //get your rank
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -128,68 +127,44 @@ int main(int argc, char *argv[])
         }
         printf("\n");
     }
-    double *rand_nums;
-    int elements_per_proc = ((dimOfMatrix * dimOfMatrix) / world_size);
-    if (my_rank == 0)
-    {
-        rand_nums = bufferMatrix;
-    }
 
-    // Create a buffer that will hold a subset of the random numbers
-    double *sub_rand_nums = malloc(sizeof(double) * elements_per_proc);
+    /*
+    MPI_Scatter(void *send_data, int send_count, MPI_Datatype send_datatype, void *recv_data, int recv_count, MPI_Datatype recv_datatype, int root, MPI_Comm communicator);
+    MPI_Scatter(rand_nums, elements_per_proc, MPI_FLOAT, sub_rand_nums,
+                elements_per_proc, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    MPI_Scatter(m, elements_per_proc, MPI_DOUBLE, sub_rand_nums,
+                elements_per_proc, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-    MPI_Datatype vector1, vector2;
+    */
 
-    int linesOfMatrix = dimOfMatrix;
-    int columnsOfMatrixForProc = dimOfMatrix / world_size;
-    int elemsToHandleEach = columnsOfMatrixForProc * columnsOfMatrixForProc;
-
-    MPI_Type_vector(linesOfMatrix, columnsOfMatrixForProc, linesOfMatrix, MPI_DOUBLE, &vector1);
-    MPI_Type_commit(&vector1);
-    MPI_Type_create_resized(vector1, 0, columnsOfMatrixForProc * sizeof(double), &vector2);
-    MPI_Type_commit(&vector2);
-
-    double *new_matrixBuffer = malloc(sizeof(double) * 8 * 8);
-    double *new_matrixA = malloc(sizeof(double) * 8 * 8);
-    new_matrixA = bufferMatrix;
-    MPI_Scatter(new_matrixA, 1, vector2, new_matrixBuffer, linesOfMatrix * columnsOfMatrixForProc, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    if (my_rank == 0)
-        printf("Matrix Scatterd \n");
-    for (i = 0; i < world_size; i++)
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(1500);
+    for (int i = 0; i < world_size; i++)
     {
         MPI_Barrier(MPI_COMM_WORLD);
-        usleep(500);
+        usleep(200);
         if (my_rank == i)
         {
-            for (i = 0; i < elemsToHandleEach; i++)
+            printf("#%dr#\n", my_rank);
+            for (int x = 0; x < (dimOfMatrix * dimOfMatrix); x++)
             {
-                if (i % columnsOfMatrixForProc == 0)
-                    printf("----------------------------- \n", my_rank, *(new_matrixBuffer + i));
-                printf("[node %d:%d] After Scatters (%f) \n", my_rank, i, *(new_matrixBuffer + i));
+                if ((x % dimOfMatrix == 0) && (x != 0))
+                {
+                    printf("|\n");
+                    printf("%f ", bufferMatrix[x]);
+                }
+                else
+                {
+                    printf("%f ", bufferMatrix[x]);
+                }
             }
-            printf("[node %d] END \n", my_rank);
+            printf("|\n");
         }
-    }
-    if (my_rank == 0)
-        printf("Vector Scatterd \n");
-    for (i = 0; i < world_size; i++)
-    {
         MPI_Barrier(MPI_COMM_WORLD);
-        usleep(500);
-        if (my_rank == i)
-        {
-            for (i = 0; i < elemsToHandleEach; i++)
-            {
-                if (i % columnsOfMatrixForProc == 0)
-                    printf("----------------------------- \n", my_rank, *(new_matrixBuffer + i));
-                printf("[node %d:%d] After Scatters (%f) \n", my_rank, i, *(new_matrixBuffer + i));
-            }
-            printf("[node %d] END \n", my_rank);
-        }
+        usleep(200);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
-    usleep(200);
     printf("[node %d] ExEnd.\n", my_rank);
     /* Start HIT 
     MPI_Barrier(MPI_COMM_WORLD);
