@@ -149,284 +149,140 @@ int main(int argc, char *argv[])
     MPI_Type_create_resized(vector1, 0, columnsOfMatrixForProc * sizeof(double), &vector2);
     MPI_Type_commit(&vector2);
 
-    double *new_matrixBuffer = malloc(sizeof(double) * 8 * 8);
-    double *new_matrixA = malloc(sizeof(double) * 8 * 8);
+    double *new_matrixBuffer = malloc(sizeof(double) * dimOfMatrix * dimOfMatrix);
+    double *new_matrixA = malloc(sizeof(double) * dimOfMatrix * dimOfMatrix);
     new_matrixA = bufferMatrix;
     MPI_Scatter(new_matrixA, 1, vector2, new_matrixBuffer, linesOfMatrix * columnsOfMatrixForProc, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    double *new_vectorBuffer = malloc(sizeof(double) * dimOfMatrix);
+    double *new_vectorB = malloc(sizeof(double) * dimOfMatrix);
+
+    int numOfElemVec = dimOfMatrix / world_size;
+    new_vectorB = bufferVector;
+    MPI_Scatter(new_vectorB, numOfElemVec, MPI_DOUBLE, new_vectorBuffer, numOfElemVec, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    int x;
+    for (x = 0; x < world_size; x++)
+    {
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(500);
+        if (my_rank == x)
+        {
+            printf("[%d Entrys of Matrix]\n", my_rank);
+            for (i = 0; i < ((dimOfMatrix * dimOfMatrix) / world_size); i++)
+            {
+                if (i % (dimOfMatrix / world_size) == 0)
+                    printf("---------------\n", my_rank, i, new_matrixBuffer[i]);
+
+                printf("[%d : %d] %f\n", my_rank, i, new_matrixBuffer[i]);
+            }
+        }
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
+    printf("\n");
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
     if (my_rank == 0)
         printf("Matrix Scatterd \n");
     for (i = 0; i < world_size; i++)
     {
         MPI_Barrier(MPI_COMM_WORLD);
-        usleep(500);
+        usleep(100);
         if (my_rank == i)
         {
-            for (i = 0; i < elemsToHandleEach; i++)
+            for (int x = 0; x < dimOfMatrix; x++)
             {
-                if (i % columnsOfMatrixForProc == 0)
-                    printf("----------------------------- \n", my_rank, *(new_matrixBuffer + i));
-                printf("[node %d:%d] After Scatters (%f) \n", my_rank, i, *(new_matrixBuffer + i));
+                if (i % dimOfMatrix == 0)
+                    printf("----------------------------- \n", my_rank, *(new_matrixBuffer + x));
+                printf("[node %d:%d] Old Scatters (%f) \n", my_rank, x, *(new_matrixBuffer + x));
+                printf("[node %d:%d] New Scatters (%f) \n", my_rank, x, new_matrixBuffer[x]);
             }
             printf("[node %d] END \n", my_rank);
         }
     }
-    if (my_rank == 0)
+    printf("\n");
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(100);
+    if (my_rank == 1)
         printf("Vector Scatterd \n");
     for (i = 0; i < world_size; i++)
     {
         MPI_Barrier(MPI_COMM_WORLD);
-        usleep(500);
+        usleep(100);
         if (my_rank == i)
         {
-            for (i = 0; i < elemsToHandleEach; i++)
+            printf("[node %d] IN \n", my_rank);
+            for (int x = 0; x < numOfElemVec; x++)
             {
-                if (i % columnsOfMatrixForProc == 0)
-                    printf("----------------------------- \n", my_rank, *(new_matrixBuffer + i));
-                printf("[node %d:%d] After Scatters (%f) \n", my_rank, i, *(new_matrixBuffer + i));
+                if (i % numOfElemVec == 0)
+                    printf("xxxxxxxxxxxxxxxxxx \n", my_rank, *(new_vectorBuffer + x));
+                printf("[node %d:%d] After Scatters (%f) \n", my_rank, x, *(new_vectorBuffer + x));
             }
             printf("[node %d] END \n", my_rank);
         }
     }
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(200);
-    printf("[node %d] ExEnd.\n", my_rank);
-    /* Start HIT 
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(500);
-    exit(1);
-
-    // Vector X -- CREAT
-    double xVector[dimOfMatrix];
-    for (int i = 0; i < dimOfMatrix; i++)
-        xVector[i] = 1;
-
-    // Creates 2d-matrix.
-    double matrixs[blocksToHandle][dimOfMatrix];
-    int i = 0;
-    for (int row = 0; row < blocksToHandle; ++row)
+    double *new_vectorX = malloc(sizeof(double) * dimOfMatrix);
+    double *old_vectorX = malloc(sizeof(double) * dimOfMatrix);
+    for (i = 0; i < dimOfMatrix; i++)
     {
-        for (int col = 0; col < dimOfMatrix; ++col)
-        {
-            matrixs[row][col] = bufferMatrix[i];
-            i++;
-        }
+        new_vectorX[i] = 0;
+        old_vectorX[i] = 1;
     }
 
-    int isLocalPartDDM = 1;
-    for (int xx = 0; xx < world_size; xx++)
+    // init END
+    // new_vectorB; new_matrixA;  new_vectorX; old_vectorX;
+
+    // jacobi-section
+
+    int nodeHoldsA = 0;
+    int innerCounter = 0;
+    printf("Handle %d", blocksToHandle);
+    for (i = 0; i < dimOfMatrix; i++)
     {
-        if (my_rank == xx)
+        double localSum = 0;
+        for (x = 0; x < blocksToHandle; x++)
         {
-            for (int x = 0; x < blocksToHandle; x++)
-            {
-                //xprintf("ROW [%d] ", x);
-                for (int y = 0; y < dimOfMatrix; y++)
-                {
-                    //xprintf("%f ", matrixs[x][y]);
-                }
-                //xprintf("\n");
-            }
+            localSum += new_matrixBuffer[x + (blocksToHandle * i)];
+        }
+        double rootSum = 0;
+        if (my_rank == 0)
+        {
 
-            //check if dominant START
-            for (int i = 0; i < blocksToHandle; i++)
+            for (x = 0; x < dimOfMatrix; x++)
             {
-                int pushedIBy = i + pushIndexByRank;
-                // for each column, finding sum of each row.
-                int sum = 0;
-                for (int j = 0; j < dimOfMatrix; j++)
-                    sum += abs(matrixs[i][j]);
-
-                // removing the diagonal element.
-                sum -= abs(matrixs[i][pushedIBy]);
-                // checking if diagonal element is less
-                // than sum of non-diagonal element.
-                if (abs(matrixs[i][pushedIBy]) < sum)
-                    isLocalPartDDM = 0;
-                //xprintf("[Row of interest %d: Value (%f)]\n", i, matrixs[i][pushedIBy]);
-            }
-            if (isLocalPartDDM == 0)
-            {
-                printf("[Node %d]Matrix is not dominant.\n", my_rank);
-            }
-            else
-            {
-                printf("[Node %d]Matrix is dominant.\n", my_rank);
+                rootSum += new_matrixA[x + (i * blocksToHandle)];
             }
         }
-        //check if dominant END
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
-    }
-
-    // checks if every part of the matrix fulfills the dd-requirement.
-    int worldIsMatrixDD = 0;
-    MPI_Allreduce(&isLocalPartDDM, &worldIsMatrixDD, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-    if (worldIsMatrixDD != world_size)
-    {
-        printf("Some parts of the matrix doesn't fulfill the DD requirement.\nThe calculation process will stop now.");
-        exit(1);
-    }
-
-    // -----------------------------------------------------[ Jacobi - Part ]--
+        if((i % blocksToHandle) == 0 && (i!=0)){
+            nodeHoldsA++;
+        }
+    // Reduce ...
+    // node with dia calcs
+    // Scatter new X  by node with dia
 
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
-    int iterCounter = 0;
-    int loopFlag = 1;
-    while (loopFlag == 1)
+    for (x = 0; x < world_size; x++)
     {
-
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(500);
-        int stopAtThisNumber = 60;
-        int rankToPrint = 0;
-        if (my_rank == rankToPrint)
-            printf("\n----------------------------------------- Iteration (%d)--\n", iterCounter);
-
-        if (my_rank == rankToPrint)
-        {
-            printf("VecX IN  \n");
-            for (int x = 0; x < dimOfMatrix; x++)
-            {
-                printf("%8f ", xVector[x]);
-            }
-            printf("\n");
-        }
-        double tempX[dimOfMatrix];
-        for (int x = 0; x < dimOfMatrix; x++)
-            tempX[x] = 0;
-
-        for (int i = 0; i < blocksToHandle; i++)
-        {
-            int myIndex = i + pushIndexByRank;
-
-            double entry_a = matrixs[i][myIndex];
-            double entry_b = bufferVector[myIndex];
-
-            double firstSum = 0;
-            for (int a = 0; a < myIndex; a++)
-            {
-                firstSum += matrixs[i][a] * xVector[a];
-            }
-            double secondSum = 0;
-            for (int a = (myIndex + 1); a < dimOfMatrix; a++)
-            {
-                secondSum += matrixs[i][a] * xVector[a];
-            }
-            double valueOfBrace = entry_b - firstSum - secondSum;
-            double componentValue = (1 / entry_a) * valueOfBrace;
-            tempX[myIndex] = componentValue;
-        }
-        if (my_rank == rankToPrint)
-        {
-            printf("TempVecX END \n");
-            for (int x = 0; x < dimOfMatrix; x++)
-            {
-                printf("%8f ", tempX[x]);
-            }
-            printf("\n");
-        }
-
-        double collectorVec[dimOfMatrix];
-        MPI_Allreduce(&tempX, &collectorVec, dimOfMatrix, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-        if (my_rank == rankToPrint)
-        {
-            printf("CollectorVec END \n");
-            for (int x = 0; x < dimOfMatrix; x++)
-            {
-                printf("%8f ", collectorVec[x]);
-            }
-            printf("\n");
-        }
-
-        double difVectors_local = 99;
-        difVectors_local = calcDif(xVector, collectorVec, dimOfMatrix);
-        for (int elemIter = 0; elemIter < dimOfMatrix; elemIter++)
-        {
-            xVector[elemIter] = collectorVec[elemIter];
-            collectorVec[elemIter] = 0;
-        }
-        if (my_rank == rankToPrint)
-        {
-            printf("xVector END \n");
-            for (int x = 0; x < dimOfMatrix; x++)
-            {
-                printf("%8f ", xVector[x]);
-            }
-            printf("\n");
-        }
-        if (difVectors_local < eps)
-            loopFlag = 0;
-
-        iterCounter++;
-
-        if (iterCounter >= stopAtThisNumber)
-        {
-            printf("ERROR, aborting calculations\n", iterCounter);
-            loopFlag = 0;
-            exit(1);
-        }
+        if (my_rank == x)
+            printf("[%d sum(%f) it(%d) \n", my_rank, localSum, i);
     }
 
-    // -------------------------------------------------------[ Save result ]--
-    char *pathToResultFile = "./res";
-    err = MPI_File_open(MPI_COMM_WORLD, pathToResultFile, MPI_MODE_RDWR | MPI_MODE_CREATE, MPI_INFO_NULL, &fhandle);
-    if (err)
-    {
-        MPI_Abort(MPI_COMM_WORLD, 911);
-    }
-    double me = 10;
-    double buf[blocksToHandle];
-    for (int index = 0; index < blocksToHandle; index++)
-    {
-        buf[index] = xVector[index + pushIndexByRank];
-        printf("saved %f \n", xVector[index + pushIndexByRank]);
-    }
-
-    err = MPI_File_write_ordered(fhandle, &buf, blocksToHandle, MPI_DOUBLE, MPI_STATUS_IGNORE);
-    if (err)
-    {
-        printf("Error writing to file. \n");
-    }
-    MPI_File_close(&fhandle);
-
-    // ------------------------------------------------------[ print Result ]--
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(1000);
     if (my_rank == 0)
     {
-        printf("\n");
-        printf("\n");
-        printf("\n");
-        printf("\n");
-        printf("----------------------------------------------[ Result ]--\n");
-        printf("Result-vector: \n");
-        for (int x = 0; x < dimOfMatrix; x++)
-        {
-            printf("%8f ", xVector[x]);
-        }
-        printf("\n");
+        printf("[%d Rsum(%f) it(%d) aHolder(%d)]]\n", my_rank, rootSum, i,nodeHoldsA);
     }
-
-    // -----------------------------------------------------[ reload Result ]--
-    // Vector Result -- LOAD
-    double result[dimOfMatrix];
-    MPI_File_open(MPI_COMM_WORLD, pathToResultFile, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);
-    MPI_File_read(fhandle, &result, dimOfMatrix, MPI_DOUBLE, MPI_STATUS_IGNORE);
-    MPI_File_close(&fhandle);
-
-    if (my_rank == 0)
-    {
-        printf("Result (reloaded): \n");
-        for (int s = 0; s < dimOfMatrix; s++)
-        {
-            printf("%f ", result[s]);
-        }
-        printf("\n");
-    }
-
-    HIT END*/
-    MPI_Finalize(); // finalizing MPI interface
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(1000);
+}
+// exit(1);
+innerCounter = 0;
+nodeHoldsA = 0;
+printf("[node %d] ExEnd.\n", my_rank);
+MPI_Finalize(); // finalizing MPI interface
 }
 
 double calcDif(double xOld[], double xNew[], int numberOfCols)
