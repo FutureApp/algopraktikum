@@ -229,60 +229,121 @@ int main(int argc, char *argv[])
         new_vectorX[i] = 0;
         old_vectorX[i] = 1;
     }
-
     // init END
-    // new_vectorB; new_matrixA;  new_vectorX; old_vectorX;
 
+    // new_vectorB; new_matrixA;  new_vectorX; old_vectorX;
     // jacobi-section
 
-    int nodeHoldsA = 0;
-    int innerCounter = 0;
-    printf("Handle %d", blocksToHandle);
-    for (i = 0; i < dimOfMatrix; i++)
+    int calcIsFinished = 0;
+    int iterationCount = 0;
+    double lastEps = -1;
+    while (calcIsFinished == 0)
     {
-        double localSum = 0;
-        for (x = 0; x < blocksToHandle; x++)
-        {
-            localSum += new_matrixBuffer[x + (blocksToHandle * i)];
-        }
-        double rootSum = 0;
         if (my_rank == 0)
+            printf("[%d] ---------------------------- [iteration %d] lastEps(%f)\n", my_rank, iterationCount, lastEps);
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(100);
+
+        int nodeHoldsA = 0;
+        int innerCounter = 0;
+        printf("Handle %d", blocksToHandle);
+        for (i = 0; i < dimOfMatrix; i++)
         {
-
-            for (x = 0; x < dimOfMatrix; x++)
+            double localSum = 0;
+            for (x = 0; x < blocksToHandle; x++)
             {
-                rootSum += new_matrixA[x + (i * blocksToHandle)];
+                localSum += new_matrixBuffer[x + (blocksToHandle * i)];
             }
-        }
-        if((i % blocksToHandle) == 0 && (i!=0)){
-            nodeHoldsA++;
-        }
-    // Reduce ...
-    // node with dia calcs
-    // Scatter new X  by node with dia
+            // DEBUG
+            double rootSum = 0;
+            if (my_rank == 0)
+            {
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(500);
-    for (x = 0; x < world_size; x++)
-    {
-        if (my_rank == x)
-            printf("[%d sum(%f) it(%d) \n", my_rank, localSum, i);
+                for (x = 0; x < dimOfMatrix; x++)
+                {
+                    rootSum += new_matrixA[x + (i * dimOfMatrix)];
+                }
+            }
+            // DEBUG END
+            if ((i % blocksToHandle) == 0 && (i != 0))
+            {
+                nodeHoldsA++;
+            }
+            // Reduce ...
+            double world_sum = 0;
+            // printf("[%d A %d] localSum = %f worldSum = %f\n", my_rank, localSum, world_sum, i);
+            MPI_Reduce(&localSum, &world_sum, 1, MPI_DOUBLE, MPI_SUM, nodeHoldsA, MPI_COMM_WORLD);
+            // printf("[%d E %d] localSum = %f worldSum = %f\n", my_rank, localSum, world_sum, i);
+
+            double diaElem = 0;
+            double Xki = 0;
+            if (my_rank == nodeHoldsA)
+            {
+                int diaElemPos = (i % blocksToHandle) + (i * blocksToHandle);
+                diaElem = new_matrixBuffer[diaElemPos];
+                world_sum -= diaElem; // in reduce-step added but wrong.
+
+                int posInB = diaElemPos % blocksToHandle;
+                double valueOfB = new_vectorBuffer[posInB];
+                Xki = (1 / diaElem) * (valueOfB - world_sum);
+                // printf(" [%d DIA at pos %d] %f | Bvalue (%f) | Xki-value (%f)\n", my_rank, diaElemPos, diaElem, new_vectorBuffer[posInB], Xki);
+            }
+
+            // MPI_Bcast( void* data, int count, MPI_Datatype datatype, int root, MPI_Comm communicator)
+            MPI_Bcast(&Xki, 1, MPI_DOUBLE, nodeHoldsA, MPI_COMM_WORLD);
+            new_vectorX[i] = Xki;
+            MPI_Barrier(MPI_COMM_WORLD);
+            usleep(500);
+
+            // node with dia calcs
+            // Scatter new X  by node with dia
+
+            MPI_Barrier(MPI_COMM_WORLD);
+            usleep(500);
+            for (x = 0; x < world_size; x++)
+            {
+                // if (my_rank == x)
+                //   printf("[%d sum(%f) it(%d) \n", my_rank, localSum, i);
+            }
+
+            MPI_Barrier(MPI_COMM_WORLD);
+            usleep(1000);
+            if (my_rank == 0)
+            {
+                //printf("[%d Rsum(%f) it(%d) aHolder(%d)]]\n", my_rank, rootSum, i, nodeHoldsA);
+            }
+            MPI_Barrier(MPI_COMM_WORLD);
+            usleep(1000);
+        } // calc newX-vector END
+
+        innerCounter = 0;
+        nodeHoldsA = 0;
+        // exit(1);
+        double curEps = calcDif(old_vectorX, new_vectorX, dimOfMatrix);
+        old_vectorX = new_vectorBuffer;
+        if (curEps < eps)
+            calcIsFinished = 1;
+        lastEps = curEps;
+        iterationCount++;
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(1000);
-    if (my_rank == 0)
+    for (int v = 0; v < world_size; v++)
     {
-        printf("[%d Rsum(%f) it(%d) aHolder(%d)]]\n", my_rank, rootSum, i,nodeHoldsA);
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(1000);
+        if (my_rank == v)
+        {
+            printf("[%d] ", my_rank);
+            for (int m = 0; m < dimOfMatrix; m++)
+            {
+                printf("%f ", new_vectorX[m]);
+            }
+            printf("\n");
+        }
     }
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(1000);
-}
-// exit(1);
-innerCounter = 0;
-nodeHoldsA = 0;
-printf("[node %d] ExEnd.\n", my_rank);
-MPI_Finalize(); // finalizing MPI interface
+
+    printf("[node %d] ExEnd.\n", my_rank);
+    MPI_Finalize(); // finalizing MPI interface
 }
 
 double calcDif(double xOld[], double xNew[], int numberOfCols)
