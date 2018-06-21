@@ -24,7 +24,8 @@ converges if the distance between the vectors x^(k) and x^(k+1) is small enough.
 void h_rootPrintHelp(int my_rank);
 void h_setAndCheckParams(int argc, char *argv[]);
 
-char *pathToSrcPic; // IN - -pm
+char *pathToSrcPic;       // IN - -s
+double numberOfFilterTo; // IN - -f
 
 int my_rank, world_size; //MPI-STUFF
 void *printVector(char tag, double *vector, int dimOfVec, int yourRank, int rankToPrint);
@@ -35,6 +36,7 @@ void *shiftyMatrix(double *matrix_new, double *matrix_old, int sizeOfMatrix)
     for (int s = 0; s < sizeOfMatrix; s++)
         matrix_new[s] = matrix_old[s];
 }
+
 int main(int argc, char *argv[])
 {
     MPI_Init(&argc, &argv);                  // initializing of MPI-Interface
@@ -49,7 +51,7 @@ int main(int argc, char *argv[])
 
     int picHeight = 0;
     int picWidth = 0;
-    picWidth = 16; // Because 1280 pixels per row.
+    picWidth = 1280; // Because 1280 pixels per row.
     double rowToHandle;
     // checks and sets the parameter.
     h_setAndCheckParams(argc, argv);
@@ -64,7 +66,7 @@ int main(int argc, char *argv[])
     unsigned char *ori_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
     MPI_File_read(fhandle, ori_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
     MPI_File_close(&fhandle);
-    printVectorcharNoBar('O', ori_PicMatrix, elemsToHandle, 16, my_rank, 0);
+    //printVectorcharNoBar('O', ori_PicMatrix, elemsToHandle, 16, my_rank, 0);
 
     int sizeOfFilterMatrices = SIZE_D;
     double blurMatrix[SIZE_D] = {0, 0, 1, 0, 0,
@@ -97,7 +99,7 @@ int main(int argc, char *argv[])
     for (i = 0; i < sizeOfFilterMatrices; i++)
         edgeDMatrix[i] = edgeDMatrix[i] / 4;
 
-    int filterToApply = 1;
+    int filterToApply = (int) numberOfFilterTo;
     double filterMatrix[SIZE_D];
     switch (filterToApply)
     {
@@ -133,33 +135,38 @@ int main(int argc, char *argv[])
     printVectorNoBar('F', filterMatrix, sizeOfFilterMatrices, 5, my_rank, 0);
 
     int randPixs = 5;
-    int picWithBIG = picWidth + 2 * randPixs;
+    int picWidthBIG = picWidth + 2 * randPixs;
     int picHeightBIG = picHeight + 2 * randPixs;
-    int sizeOfWorkingMatrix = picWithBIG * picHeightBIG;
-    unsigned char *new_matrixBIG = malloc(sizeof(unsigned char) * sizeOfWorkingMatrix);
-    for (i = 0; i < picWithBIG * picHeightBIG; i++)
-        new_matrixBIG[i] = 0;
-    //printVectorcharNoBar('w', new_matrixBIG, picWithBIG * picHeightBIG, picWithBIG, my_rank, 0);
+    int sizeOfWorkingMatrix = picWidthBIG * picHeightBIG;
+    unsigned char *init_matrixBig = malloc(sizeof(unsigned char) * sizeOfWorkingMatrix);
+    unsigned char *new_matrixBig = malloc(sizeof(unsigned char) * sizeOfWorkingMatrix);
+    for (i = 0; i < picWidthBIG * picHeightBIG; i++)
+    {
+        init_matrixBig[i] = 0;
+        new_matrixBig[i] = 0;
+    }
+    //printVectorcharNoBar('w', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
 
     int start = randPixs;
     int x, y, v, u;
     int posInOriMatrix = 0;
     int k = 2;
-    //printf("BIG B [%d,%d]\n", randPixs, picWithBIG - randPixs);
+    //printf("BIG B [%d,%d]\n", randPixs, picWidthBIG - randPixs);
     for (y = start; y < (picHeightBIG - randPixs); y++)
-        for (x = start; x < (picWithBIG - randPixs); x++)
+        for (x = start; x < (picWidthBIG - randPixs); x++)
         {
-            //      printf("working on %d\n", (x + picWithBIG * i));
-            new_matrixBIG[x + picWithBIG * y] = ori_PicMatrix[posInOriMatrix];
+            //      printf("working on %d\n", (x + picWidthBIG * i));
+            init_matrixBig[x + picWidthBIG * y] = ori_PicMatrix[posInOriMatrix];
             posInOriMatrix++;
         }
     posInOriMatrix = 0;
     int debCounter = 0;
-    printVectorcharNoBar('I', new_matrixBIG, picWithBIG * picHeightBIG, picWithBIG, my_rank, 0);
+    unsigned char *manipulated_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
+    //  printVectorcharNoBar('I', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
     for (y = start; y < (picHeightBIG - randPixs); y++)
-        for (x = start; x < (picWithBIG - randPixs); x++)
+        for (x = start; x < (picWidthBIG - randPixs); x++)
         {
-
+            int localSum = 0;
             for (v = 0; v <= 4; v++)
             {
                 for (u = 0; u <= 4; u++)
@@ -167,36 +174,62 @@ int main(int argc, char *argv[])
                     double elemOfMatrix = 0;
                     double elemOfFilter = 0;
                     int matrixX = (x + u - k);
-                    int matrixY = (picWithBIG * y) + picWithBIG * (v - k);
-
                     int matrixYY = y + v - k;
-                    int posInMatrix = matrixX + matrixY;
+                    int matrixY = (picWidthBIG * y) + picWidthBIG * (v - k);
 
-                    elemOfMatrix = new_matrixBIG[posInMatrix];
+                    int posInMatrix = matrixX + matrixY;
+                    elemOfMatrix = init_matrixBig[posInMatrix];
+
                     int posInFilter = u + v * 5;
                     elemOfFilter = filterMatrix[posInFilter];
-                    new_matrixBIG[posInMatrix] = 1;
-
+                    localSum += elemOfFilter * elemOfMatrix;
                     //printf("Pos %d x %d I(%d) in Matrix: %3.3f\n", matrixYY, matrixX, posInMatrix, posInMatrix, elemOfMatrix);
-                    printf("POS(%d) Filter elem: %f | Martix elem: %f\n", posInFilter, elemOfFilter, elemOfMatrix);
+                    //              printf("POS(%d) Filter elem: %f | Martix elem: %f\n", posInFilter, elemOfFilter, elemOfMatrix);
                 }
-                printf("\n");
+                //          printf("\n");
             }
-            abort();
+            if (localSum < 0)
+                localSum = 0;
+            else if (localSum > 255)
+                localSum = 255;
+            else
+                ;
+            new_matrixBig[x + y * picWidthBIG] = localSum;
+            manipulated_PicMatrix[debCounter] = localSum;
+            //printf("localSum =%d\n", localSum);
             debCounter++;
-            //for(i = 0;i < 10000000*5;i++);
-            printVectorcharNoBar('I', new_matrixBIG, picWithBIG * picHeightBIG, picWithBIG, my_rank, 0);
-            printf("\n\n\n\n\n\n\n\n\n\n\n");
-            if (debCounter == 3)
-                ; // abort();
+            //for (i = 0; i < 10000000 * 5; i++)  ;
+            //        printVectorcharNoBar('N', new_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
+            //printf("\n\n\n\n\n");
+            //printf("\n\n\n\n\n");
+            //abort();
         }
 
-    printf("[node %d] E %d.\n", my_rank, start);
-    unsigned char test = 244;
-    double testChar = test;
-    testChar--;
-    unsigned char testnew = testChar;
-    printf("[node %d] %u.\n", my_rank, testnew);
+    // ------------------------------------------------------------[ RESULT ]--
+
+    if (my_rank == 0)
+        printf("------------------------------------------[ Result ]\n");
+    //printVectorcharNoBar('r', manipulated_PicMatrix, elemsToHandle, picWidth, my_rank, 0);
+
+    // -------------------------------------------------------[ RESULT SAVE ]--
+    // write and reload result.
+    if (my_rank == 0)
+    {
+        char *pathToResultFile = "./result.gray"; //PATH where to save result
+        err = MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &fhandle);
+        if (err)
+            printf("Error opening the file. \n");
+        MPI_File_write(fhandle, manipulated_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
+        MPI_File_close(&fhandle);
+        printf("Result saved. Check < %s >.\n", pathToResultFile);
+        unsigned char *reload_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
+        MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &fhandle);
+        MPI_File_read(fhandle, reload_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
+        MPI_File_close(&fhandle);
+        printf("------------------------------------------[Result rel.]\n");
+       // printVectorcharNoBar('R', reload_PicMatrix, elemsToHandle, picWidth, my_rank, 0);
+    }
+
     printf("[node %d] ExEnd.\n", my_rank);
     MPI_Finalize(); // finalizing MPI interface
 }
@@ -297,9 +330,12 @@ void h_rootPrintHelp(int my_rank)
     if (my_rank == 0)
     {
         printf("------------------------------------[ HELP ]\n");
-        printf("*Parameter -m <path to matrix>   :    Path to file containing the matrix-entrys.\n");
-        printf("*Parameter -v <path to vector>   :    Path to file containing the vector-entrys.\n");
-        printf("*Parameter -e <number as double>:     Specifies epsilon. Need to be double. \n");
+        printf("*Parameter -s <path to picture>   :    Path to picture.\n");
+        printf("*Parameter -f <number as Integer> :    Specifies the filter-matrix to apply. Available filters:  \n");
+        printf("                                       [0] Blur  \n");
+        printf("                                       [1] Sharpen  \n");
+        printf("                                       [2] Relief  \n");
+        printf("                                       [3] Edge dec.  \n");
         printf("\n");
         printf("Example call:\n");
         printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
@@ -317,9 +353,10 @@ void h_setAndCheckParams(int argc, char *argv[])
     int index;
     int c;
     int man_s = -1;
+    int man_f = -1;
 
     opterr = 0;
-    while ((c = getopt(argc, argv, "hs:")) != -1)
+    while ((c = getopt(argc, argv, "hs:f:")) != -1)
         switch (c)
         {
         case 'h':
@@ -329,6 +366,10 @@ void h_setAndCheckParams(int argc, char *argv[])
         case 's':
             pathToSrcPic = optarg;
             man_s = 0;
+            break;
+        case 'f':
+            sscanf(optarg, "%lf", &numberOfFilterTo);
+            man_f = 0;
             break;
         case '?':
             if (my_rank == 0)
@@ -351,7 +392,7 @@ void h_setAndCheckParams(int argc, char *argv[])
             printf("Error. Can't process input.\n");
             abort();
         }
-    int res = man_s;
+    int res = man_s + man_f;
     if (res != 0)
     {
         if (my_rank == 0)
