@@ -18,6 +18,9 @@ converges if the distance between the vectors x^(k) and x^(k+1) is small enough.
 #include <ctype.h>
 #include <unistd.h>
 
+#define SIZE_E 5
+#define SIZE_D SIZE_E *SIZE_E
+
 void h_rootPrintHelp(int my_rank);
 void h_setAndCheckParams(int argc, char *argv[]);
 
@@ -27,7 +30,11 @@ int my_rank, world_size; //MPI-STUFF
 void *printVector(char tag, double *vector, int dimOfVec, int yourRank, int rankToPrint);
 void *printVectorNoBar(char tag, double *vector, int dimOfVec, int row, int yourRank, int rankToPrint);
 void *printVectorcharNoBar(char tag, unsigned char *vector, int dimOfVec, int row, int yourRank, int rankToPrint);
-
+void *shiftyMatrix(double *matrix_new, double *matrix_old, int sizeOfMatrix)
+{
+    for (int s = 0; s < sizeOfMatrix; s++)
+        matrix_new[s] = matrix_old[s];
+}
 int main(int argc, char *argv[])
 {
     MPI_Init(&argc, &argv);                  // initializing of MPI-Interface
@@ -59,36 +66,71 @@ int main(int argc, char *argv[])
     MPI_File_close(&fhandle);
     printVectorcharNoBar('O', ori_PicMatrix, elemsToHandle, 16, my_rank, 0);
 
-    int sizeOfFilterMatrices = 5 * 5;
-    double blurMatrix[5 * 5] = {0, 0, 1, 0, 0,
-                                0, 2, 4, 2, 0,
-                                1, 4, 9, 4, 1,
-                                0, 2, 4, 2, 0,
-                                0, 0, 1, 0, 0};
+    int sizeOfFilterMatrices = SIZE_D;
+    double blurMatrix[SIZE_D] = {0, 0, 1, 0, 0,
+                                 0, 2, 4, 2, 0,
+                                 1, 4, 9, 4, 1,
+                                 0, 2, 4, 2, 0,
+                                 0, 0, 1, 0, 0};
 
     printVectorNoBar('T', blurMatrix, sizeOfFilterMatrices, 5, my_rank, 0);
     for (i = 0; i < sizeOfFilterMatrices; i++)
         blurMatrix[i] = blurMatrix[i] / 37;
     printVectorNoBar('T', blurMatrix, sizeOfFilterMatrices, 5, my_rank, 0);
 
-    double sharpenMatrix[5 * 5] = {0, 0, 0, 0, 0,
-                                   0, 0, -1, 0, 0,
-                                   0, -1, 5, -1, 0,
-                                   0, 0, -1, 0, 0,
+    double sharpenMatrix[SIZE_D] = {0, 0, 0, 0, 0,
+                                    0, 0, -1, 0, 0,
+                                    0, -1, 5, -1, 0,
+                                    0, 0, -1, 0, 0,
+                                    0, 0, 0, 0, 0};
+    double reliefMatrix[SIZE_D] = {0, 0, 0, 0, 0,
+                                   0, -2, -1, 0, 0,
+                                   0, -1, 1, 1, 0,
+                                   0, 0, 1, 2, 0,
                                    0, 0, 0, 0, 0};
-    double reliefMatrix[5 * 5] = {0, 0, 0, 0, 0,
-                                  0, -2, -1, 0, 0,
-                                  0, -1, 1, 1, 0,
-                                  0, 0, 1, 2, 0,
-                                  0, 0, 0, 0, 0};
 
-    double edgeDMatrix[5 * 5] = {0, 0, 0, 0, 0,
-                                 0, 1, 2, 1, 0,
-                                 0, 2, -12, 2, 0,
-                                 0, 1, 2, 1, 0,
-                                 0, 0, 0, 0, 0};
+    double edgeDMatrix[SIZE_D] = {0, 0, 0, 0, 0,
+                                  0, 1, 2, 1, 0,
+                                  0, 2, -12, 2, 0,
+                                  0, 1, 2, 1, 0,
+                                  0, 0, 0, 0, 0};
     for (i = 0; i < sizeOfFilterMatrices; i++)
         edgeDMatrix[i] = edgeDMatrix[i] / 4;
+
+    int filterToApply = 1;
+    double filterMatrix[SIZE_D];
+    switch (filterToApply)
+    {
+        {
+        case 0:
+            if (my_rank == 0)
+                printf("Applying blur-filter\n");
+            shiftyMatrix(filterMatrix, blurMatrix, SIZE_D);
+            break;
+        case 1:
+            if (my_rank == 0)
+                printf("Applying sharpen-filter\n");
+            shiftyMatrix(filterMatrix, sharpenMatrix, SIZE_D);
+            break;
+        case 2:
+            if (my_rank == 0)
+                printf("Applying relief:-filter\n");
+            shiftyMatrix(filterMatrix, reliefMatrix, SIZE_D);
+            break;
+        case 3:
+            if (my_rank == 0)
+                printf("Applying edge.dec-filter\n");
+            shiftyMatrix(filterMatrix, edgeDMatrix, SIZE_D);
+            break;
+        default:
+            printf("Don't know which filter-matrix to apply. Execution will terminate now.");
+            h_rootPrintHelp(my_rank);
+            abort();
+            break;
+        }
+    }
+
+    printVectorNoBar('F', filterMatrix, sizeOfFilterMatrices, 5, my_rank, 0);
 
     int randPixs = 5;
     int picWithBIG = picWidth + 2 * randPixs;
@@ -112,26 +154,41 @@ int main(int argc, char *argv[])
             posInOriMatrix++;
         }
     posInOriMatrix = 0;
+    int debCounter = 0;
     printVectorcharNoBar('I', new_matrixBIG, picWithBIG * picHeightBIG, picWithBIG, my_rank, 0);
     for (y = start; y < (picHeightBIG - randPixs); y++)
         for (x = start; x < (picWithBIG - randPixs); x++)
         {
 
-            for (v = 0; v < 4; v++)
-                for (u = 0; u < 4; u++)
+            for (v = 0; v <= 4; v++)
+            {
+                for (u = 0; u <= 4; u++)
                 {
                     double elemOfMatrix = 0;
                     double elemOfFilter = 0;
                     int matrixX = (x + u - k);
-                    int matrixY = (picWithBIG * y) + v - k;
-                    
+                    int matrixY = (picWithBIG * y) + picWithBIG * (v - k);
+
                     int matrixYY = y + v - k;
                     int posInMatrix = matrixX + matrixY;
-                    
+
                     elemOfMatrix = new_matrixBIG[posInMatrix];
-                    printf("Pos %d x %d  in Matrix: %f\n", matrixYY, matrixX, posInMatrix, elemOfMatrix);
+                    int posInFilter = u + v * 5;
+                    elemOfFilter = filterMatrix[posInFilter];
+                    new_matrixBIG[posInMatrix] = 1;
+
+                    //printf("Pos %d x %d I(%d) in Matrix: %3.3f\n", matrixYY, matrixX, posInMatrix, posInMatrix, elemOfMatrix);
+                    printf("POS(%d) Filter elem: %f | Martix elem: %f\n", posInFilter, elemOfFilter, elemOfMatrix);
                 }
+                printf("\n");
+            }
             abort();
+            debCounter++;
+            //for(i = 0;i < 10000000*5;i++);
+            printVectorcharNoBar('I', new_matrixBIG, picWithBIG * picHeightBIG, picWithBIG, my_rank, 0);
+            printf("\n\n\n\n\n\n\n\n\n\n\n");
+            if (debCounter == 3)
+                ; // abort();
         }
 
     printf("[node %d] E %d.\n", my_rank, start);
@@ -208,10 +265,11 @@ void *printVectorcharNoBar(char tag, unsigned char *vector, int dimOfVec, int ro
 {
     int hit = dimOfVec / row;
     int m = 0;
+    int index = 0;
     if (yourRank == rankToPrint)
     {
         printf("[%d][%c]  > ", yourRank, tag);
-        printf("\n       ");
+        printf("\n          ");
         for (m = 0; m < hit; m++)
         {
             printf("%3u ", m);
@@ -219,7 +277,10 @@ void *printVectorcharNoBar(char tag, unsigned char *vector, int dimOfVec, int ro
         for (m = 0; m < dimOfVec; m++)
         {
             if ((m % hit) == 0)
-                printf("\n       ");
+            {
+                printf("\n%3d       ", index);
+                index++;
+            }
             printf("%3u ", vector[m]);
         }
         printf("\n");
