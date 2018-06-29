@@ -24,7 +24,7 @@ converges if the distance between the vectors x^(k) and x^(k+1) is small enough.
 void h_rootPrintHelp(int my_rank);
 void h_setAndCheckParams(int argc, char *argv[]);
 
-char *pathToSrcPic;       // IN - -s
+char *pathToSrcPic;      // IN - -s
 double numberOfFilterTo; // IN - -f
 
 int my_rank, world_size; //MPI-STUFF
@@ -51,7 +51,7 @@ int main(int argc, char *argv[])
 
     int picHeight = 0;
     int picWidth = 0;
-    picWidth = 1280; // Because 1280 pixels per row.
+    picWidth = 16; // Because 1280 pixels per row.
     double rowToHandle;
     // checks and sets the parameter.
     h_setAndCheckParams(argc, argv);
@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
     for (i = 0; i < sizeOfFilterMatrices; i++)
         edgeDMatrix[i] = edgeDMatrix[i] / 4;
 
-    int filterToApply = (int) numberOfFilterTo;
+    int filterToApply = (int)numberOfFilterTo;
     double filterMatrix[SIZE_D];
     switch (filterToApply)
     {
@@ -161,8 +161,61 @@ int main(int argc, char *argv[])
         }
     posInOriMatrix = 0;
     int debCounter = 0;
+
+    unsigned char *packLeftBlockToSend = malloc(sizeof(unsigned char) * picHeightBIG * 2);
+    unsigned char *packRightBlockToSend = malloc(sizeof(unsigned char) * picHeightBIG * 2);
+
+    unsigned char *packLeftBlockToRecv = malloc(sizeof(unsigned char) * picHeightBIG * 2);
+    unsigned char *packRightBlockToRecv = malloc(sizeof(unsigned char) * picHeightBIG * 2);
+
+    int blockOfElmNumber = picWidth / world_size;
+
+    for (i = 0; i < picHeightBIG; i++)
+    {
+        int indexPackL0 = my_rank * blockOfElmNumber;
+        int indexPackL1 = (my_rank * blockOfElmNumber) + 1;
+
+        int indexPackR0 = ((my_rank + 1) * blockOfElmNumber) - 2;
+        int indexPackR1 = ((my_rank + 1) * blockOfElmNumber) - 1;
+
+        int elm00 = init_matrixBig[(i * picWidthBIG) + indexPackL0 + randPixs];
+        int elm01 = init_matrixBig[(i * picWidthBIG) + indexPackL1 + randPixs];
+        int elm02 = init_matrixBig[(i * picWidthBIG) + indexPackR0 + randPixs];
+        int elm03 = init_matrixBig[(i * picWidthBIG) + indexPackR1 + randPixs];
+
+        packLeftBlockToSend[i * 2] = elm00;
+        packLeftBlockToSend[(i * 2) + 1] = elm01;
+
+        packRightBlockToSend[i * 2] = elm02;
+        packRightBlockToSend[(i * 2) + 1] = elm03;
+    }
+    printf("[%d] Packing finished\n", my_rank);
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
+    printVectorcharNoBar('I', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
+    if (my_rank == 3)
+    {
+        printf("Left\n");
+        for (i = 0; i < picHeightBIG * 2; i++)
+        {
+            if (i % 2 == 0)
+                printf("\n---\n (%d)", i / 2);
+            printf("%u ", packLeftBlockToSend[i]);
+        }
+        printf("Right\n");
+        for (i = 0; i < picHeightBIG * 2; i++)
+        {
+            if (i % 2 == 0)
+                printf("\n---\n (%d)", i / 2);
+            printf("%u ", packRightBlockToSend[i]);
+        }
+    }
+
+    abort();
     unsigned char *manipulated_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
-    //  printVectorcharNoBar('I', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
+    printVectorcharNoBar('I', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
     for (y = start; y < (picHeightBIG - randPixs); y++)
         for (x = start; x < (picWidthBIG - randPixs); x++)
         {
@@ -183,6 +236,7 @@ int main(int argc, char *argv[])
                     int posInFilter = u + v * 5;
                     elemOfFilter = filterMatrix[posInFilter];
                     localSum += elemOfFilter * elemOfMatrix;
+
                     //printf("Pos %d x %d I(%d) in Matrix: %3.3f\n", matrixYY, matrixX, posInMatrix, posInMatrix, elemOfMatrix);
                     //              printf("POS(%d) Filter elem: %f | Martix elem: %f\n", posInFilter, elemOfFilter, elemOfMatrix);
                 }
@@ -198,8 +252,8 @@ int main(int argc, char *argv[])
             manipulated_PicMatrix[debCounter] = localSum;
             //printf("localSum =%d\n", localSum);
             debCounter++;
-            //for (i = 0; i < 10000000 * 5; i++)  ;
-            //        printVectorcharNoBar('N', new_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
+            //for (i = 0; i < 10000000 * 2; i++)  ;
+            printVectorcharNoBar('N', new_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
             //printf("\n\n\n\n\n");
             //printf("\n\n\n\n\n");
             //abort();
@@ -227,7 +281,7 @@ int main(int argc, char *argv[])
         MPI_File_read(fhandle, reload_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
         MPI_File_close(&fhandle);
         printf("------------------------------------------[Result rel.]\n");
-       // printVectorcharNoBar('R', reload_PicMatrix, elemsToHandle, picWidth, my_rank, 0);
+        // printVectorcharNoBar('R', reload_PicMatrix, elemsToHandle, picWidth, my_rank, 0);
     }
 
     printf("[node %d] ExEnd.\n", my_rank);
