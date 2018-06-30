@@ -165,8 +165,14 @@ int main(int argc, char *argv[])
     unsigned char *packLeftBlockToSend = malloc(sizeof(unsigned char) * picHeightBIG * 2);
     unsigned char *packRightBlockToSend = malloc(sizeof(unsigned char) * picHeightBIG * 2);
 
-    unsigned char *packLeftBlockToRecv = malloc(sizeof(unsigned char) * picHeightBIG * 2);
     unsigned char *packRightBlockToRecv = malloc(sizeof(unsigned char) * picHeightBIG * 2);
+    unsigned char *packLeftBlockToRecv = malloc(sizeof(unsigned char) * picHeightBIG * 2);
+
+    for (i = 0; i < picHeightBIG * 2; i++)
+    {
+        packLeftBlockToRecv[i] = my_rank;
+        packRightBlockToRecv[i] = my_rank;
+    }
 
     int blockOfElmNumber = picWidth / world_size;
     MPI_Barrier(MPI_COMM_WORLD);
@@ -190,7 +196,7 @@ int main(int argc, char *argv[])
 
         packRightBlockToSend[i * 2] = elm02;
         packRightBlockToSend[(i * 2) + 1] = elm03;
-        printf("[%d] 0:%u 1:%u 2:%u 3:%u\n", my_rank, elm00, elm01, elm02, elm03);
+        printf("[%d]                        0:%u 1:%u 2:%u 3:%u\n", my_rank, elm00, elm01, elm02, elm03);
     }
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
@@ -227,7 +233,8 @@ int main(int argc, char *argv[])
     if (my_rank == 0)
     {
         printf("[%d ]In ch1 REV only\n", my_rank);
-        MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch1);
+        //packLeftBlockToRecv
+        MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch1);
     }
     else if (my_rank == world_size - 1)
     {
@@ -236,11 +243,16 @@ int main(int argc, char *argv[])
     }
     else
     {
-        int sendToR = my_rank - 1;
-        int revFrom = my_rank + 1;
-        printf("[%d ]In ch1 BOTH SendingTO:%d REV_FROM:%d\n", my_rank, sendToR, revFrom);
-        MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, revFrom, 1, MPI_COMM_WORLD, &ch1);
-        MPI_Send_init(packLeftBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, sendToR, 1, MPI_COMM_WORLD, &ch1);
+        if (my_rank % 2 == 1)
+        {
+            MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch1);
+            MPI_Send_init(packLeftBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch1);
+        }
+        else
+        {
+            MPI_Send_init(packLeftBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch1);
+            MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch1);
+        }
     }
 
     // x ------> o
@@ -250,31 +262,46 @@ int main(int argc, char *argv[])
     }
     else if (my_rank == world_size - 1)
     {
-        MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 2, MPI_COMM_WORLD, &ch2);
+        MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 2, MPI_COMM_WORLD, &ch2);
     }
     else
     {
-        MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 2, MPI_COMM_WORLD, &ch2);
-        MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 2, MPI_COMM_WORLD, &ch2);
+        if (my_rank % 2 == 1)
+        {
+            MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 2, MPI_COMM_WORLD, &ch2);
+            MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 2, MPI_COMM_WORLD, &ch2);
+        }
+        else
+        {
+            MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 2, MPI_COMM_WORLD, &ch2);
+            MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 2, MPI_COMM_WORLD, &ch2);
+        }
     }
+
+    MPI_Start(&ch2);
+    MPI_Wait(&ch2, &status);
     MPI_Start(&ch1);
     MPI_Wait(&ch1, &status);
     printVectorcharNoBar('I', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
-    if (my_rank == 1)
+    if (my_rank == 0)
     {
-        printf("\n[%d]From Right Neigh\n", my_rank);
+        printf("\n[%d]Hat nach recht gesendet R-BlockSend\n", my_rank);
         for (i = 0; i < picHeightBIG * 2; i++)
         {
             if (i % 2 == 0)
                 printf("\n");
-            printf("%u ", packLeftBlockToSend[i]);
+            printf("%u ", packRightBlockToSend[i]);
         }
     }
     if (my_rank == 0)
+        printf("\n");
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
+    if (my_rank == 1)
     {
-        printf("\n[%d]From Right Neigh\n", my_rank);
+        printf("\n[%d]Hat von links bekommen L-BlockRec\n", my_rank);
         for (i = 0; i < picHeightBIG * 2; i++)
         {
             if (i % 2 == 0)
@@ -282,11 +309,17 @@ int main(int argc, char *argv[])
             printf("%u ", packLeftBlockToRecv[i]);
         }
     }
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
+    abort();
 
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
     printf("[%d] Shareing is finished\n", my_rank);
     unsigned char *manipulated_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
     printVectorcharNoBar('I', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -297,7 +330,7 @@ int main(int argc, char *argv[])
     {
         for (y = start; y < (picHeightBIG - randPixs); y++)
         {
-            for (x = myBoundL; x < myBoundR; x++)
+            for (x = myBoundL; x <= myBoundR; x++)
             {
 
                 int localSum = 0;
@@ -313,16 +346,24 @@ int main(int argc, char *argv[])
                         int posInMatrix = matrixX + matrixY;
 
                         // take elem from left
+                        int easyPosInLeftNBlock = (myBoundL - matrixX) % 2;
+                        int posPushByY = easyPosInLeftNBlock + matrixYY * 2;
                         if (matrixX < myBoundL)
-                            printf("[%d] m:%d b:%d YES L \n", my_rank, matrixX, myBoundL);
+                        {
+                            int easyPosInLeftNBlock = (myBoundL - matrixX) % 2;
+                            int posPushByY = easyPosInLeftNBlock + matrixYY * 2;
+                            printf("[%d] m:%d b:%d YES L  ELMPOS(%u) ELM(%u)\n", my_rank, matrixX, myBoundL, posPushByY, packLeftBlockToRecv[posPushByY]);
+                        }
+                        // elm is in working range of node
                         else
-                            printf("[%d] m:%d b:%d NO L \n", my_rank, matrixX, myBoundL);
+                            printf("[%d] m:%d b:%d NO L  ELM(%u) \n", my_rank, matrixX, myBoundL, init_matrixBig[posInMatrix]);
 
                         // take elm from right
-                        if (matrixX >= myBoundR)
-                            printf("[%d] m:%d b:%d YES R \n", my_rank, matrixX, myBoundR);
+                        if (matrixX > myBoundR)
+                            printf("[%d] m:%d b:%d YES R  ELMPOS(%u) ELM(%u)\n", my_rank, matrixX, myBoundR, posPushByY, packRightBlockToRecv[posPushByY]);
+                        // elm is in working range of node
                         else
-                            printf("[%d] m:%d b:%d NO R \n", my_rank, matrixX, myBoundR);
+                            printf("[%d] m:%d b:%d NO R  ELM(%u)\n", my_rank, matrixX, myBoundR, init_matrixBig[posInMatrix]);
 
                         elemOfMatrix = init_matrixBig[posInMatrix];
 
@@ -337,7 +378,7 @@ int main(int argc, char *argv[])
                     printf("[%d]################################ u\n", my_rank);
                     printf("[%d]---------------------------------------- v%d\n", my_rank, v);
                 }
-                printf("[%d]############################################## v\n", my_rank);
+                printf("[%d]############################################## Fv\n", my_rank);
                 printf("[%d]---------------------------------------- x(%d)\n", my_rank, x);
                 if (localSum < 0)
                     localSum = 0;
@@ -355,6 +396,7 @@ int main(int argc, char *argv[])
                 //printf("\n\n\n\n\n");
                 //abort();
             }
+            abort();
             printf("[%d]############################################## x\n", my_rank);
         }
         printf("[%d]---------------------------------------- y\n", my_rank);
