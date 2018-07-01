@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //get your rank
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-    MPI_File fhandle;
+    MPI_File mpi_file;
     MPI_Offset fsize;
 
     int i;
@@ -61,15 +61,34 @@ int main(int argc, char *argv[])
         printf("[%d] Program input: (filter:%f)(width:%d)", numberOfFilterTo, picWidth);
     }
 
-    err = MPI_File_open(MPI_COMM_SELF, pathToSrcPic, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);
-    err = MPI_File_get_size(fhandle, &fsize);
+    err = MPI_File_open(MPI_COMM_SELF, pathToSrcPic, MPI_MODE_RDONLY, MPI_INFO_NULL, &mpi_file);
+    err = MPI_File_get_size(mpi_file, &fsize);
 
     picHeight = (fsize / (sizeof(unsigned char)) / picWidth);
     int elemsToHandle = picHeight * picWidth;
-    // printf("H %d W %d\n", picHeight, picWidth);
     unsigned char *ori_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
-    MPI_File_read(fhandle, ori_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
-    MPI_File_close(&fhandle);
+    //MPI_File_read(mpi_file, ori_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
+    //***************************************
+    MPI_Datatype col, vector2;
+    //MPI_Type_vector(blocklength = 2, stride = 5, old_type = MPI_INT, &newtype);
+    MPI_Type_vector(picHeight, (picWidth / world_size), picWidth, MPI_UNSIGNED_CHAR, &col);
+    MPI_Type_commit(&col);
+    MPI_Type_create_resized(col, 0, picWidth * sizeof(unsigned char), &vector2);
+    //MPI_File_set_view(mpi_file, 0, MPI_UNSIGNED_CHAR, MPI_UNSIGNED_CHAR, "native", MPI_INFO_NULL);
+    MPI_Type_commit(&vector2);
+
+    MPI_File_read_ordered(mpi_file, ori_PicMatrix, 1, vector2, MPI_STATUS_IGNORE);
+    MPI_File_close(&mpi_file);
+    if (my_rank == 0)
+        for (i = 0; i < picWidth * picHeight; i++)
+        {
+            printf("%3u ", ori_PicMatrix[i]);
+        }
+    if (my_rank == 0)
+        printf("\n");
+    abort();
+    // MPI_Scatter(new_matrixA, 1, vector2, new_matrixBuffer, linesOfMatrix * columnsOfMatrixForProc, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    //***************
     //printVectorcharNoBar('O', ori_PicMatrix, elemsToHandle, 16, my_rank, 0);
 
     int sizeOfFilterMatrices = SIZE_D;
@@ -201,8 +220,9 @@ int main(int argc, char *argv[])
 
         packRightBlockToSend[i * 2] = elm02;
         packRightBlockToSend[(i * 2) + 1] = elm03;
-        printf("[%d]                        0:%u 1:%u 2:%u 3:%u\n", my_rank, elm00, elm01, elm02, elm03);
+        //printf("[%d]                        0:%u 1:%u 2:%u 3:%u\n", my_rank, elm00, elm01, elm02, elm03);
     }
+
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
     if (my_rank == 0)
@@ -215,14 +235,17 @@ int main(int argc, char *argv[])
             printf("%u ", packRightBlockToSend[i]);
         }
     }
+    printVectorcharNoBar('D', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
+    abort(); //DEBUG
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
     printf("[%d] Packing finished\n", my_rank);
+    printVectorcharNoBar('D', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
 
     MPI_Status status;
     MPI_Request ch1; // o <------ x
     MPI_Request ch2; // x ------> o
-    MPI_Request ch3; // x ------> o
+    MPI_Request ch3; // o ------> x
     MPI_Request ch4; // x ------> o
 
     int send = my_rank;
@@ -429,7 +452,6 @@ int main(int argc, char *argv[])
 
     // ------------------------------------------------------------[ RESULT ]--
 
-
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
     if (my_rank == 0)
@@ -458,16 +480,16 @@ int main(int argc, char *argv[])
     if (my_rank == 0)
     {
         char *pathToResultFile = "./result.gray"; //PATH where to save result
-        err = MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &fhandle);
+        err = MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
         if (err)
             printf("Error opening the file. \n");
-        MPI_File_write(fhandle, local_result_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
-        MPI_File_close(&fhandle);
+        MPI_File_write(mpi_file, local_result_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
+        MPI_File_close(&mpi_file);
         printf("Result saved. Check < %s >.\n", pathToResultFile);
         unsigned char *reload_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
-        MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &fhandle);
-        MPI_File_read(fhandle, reload_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
-        MPI_File_close(&fhandle);
+        MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
+        MPI_File_read(mpi_file, reload_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
+        MPI_File_close(&mpi_file);
         printf("------------------------------------------[Result rel.]\n");
         // printVectorcharNoBar('R', reload_PicMatrix, elemsToHandle, picWidth, my_rank, 0);
     }
