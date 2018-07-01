@@ -429,6 +429,7 @@ int main(int argc, char *argv[])
 
     // ------------------------------------------------------------[ RESULT ]--
 
+
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
     if (my_rank == 0)
