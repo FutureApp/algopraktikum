@@ -26,6 +26,7 @@ void h_setAndCheckParams(int argc, char *argv[]);
 
 char *pathToSrcPic;      // IN - -s
 double numberOfFilterTo; // IN - -f
+int picWidth;            // IN - -w
 
 int my_rank, world_size; //MPI-STUFF
 void *printVector(char tag, double *vector, int dimOfVec, int yourRank, int rankToPrint);
@@ -50,12 +51,15 @@ int main(int argc, char *argv[])
     int err = 0;
 
     int picHeight = 0;
-    int picWidth = 0;
-    picWidth = 16; // Because 1280 pixels per row.
+    //picWidt is given fromm outside.
+
     double rowToHandle;
     // checks and sets the parameter.
     h_setAndCheckParams(argc, argv);
-    //*****
+    if (my_rank == 0)
+    {
+        printf("[%d] Program input: (filter:%f)(width:%d)", numberOfFilterTo, picWidth);
+    }
 
     err = MPI_File_open(MPI_COMM_SELF, pathToSrcPic, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle);
     err = MPI_File_get_size(fhandle, &fsize);
@@ -160,18 +164,19 @@ int main(int argc, char *argv[])
             posInOriMatrix++;
         }
     posInOriMatrix = 0;
-    int debCounter = 0;
 
     unsigned char *packLeftBlockToSend = malloc(sizeof(unsigned char) * picHeightBIG * 2);
     unsigned char *packRightBlockToSend = malloc(sizeof(unsigned char) * picHeightBIG * 2);
 
     unsigned char *packRightBlockToRecv = malloc(sizeof(unsigned char) * picHeightBIG * 2);
     unsigned char *packLeftBlockToRecv = malloc(sizeof(unsigned char) * picHeightBIG * 2);
+    unsigned char *zeros = malloc(sizeof(unsigned char) * picHeightBIG * 2);
 
     for (i = 0; i < picHeightBIG * 2; i++)
     {
-        packLeftBlockToRecv[i] = my_rank;
-        packRightBlockToRecv[i] = my_rank;
+        packLeftBlockToRecv[i] = 0;  //my_rank;
+        packRightBlockToRecv[i] = 0; //my_rank;
+        zeros[i] = 0;
     }
 
     int blockOfElmNumber = picWidth / world_size;
@@ -200,22 +205,15 @@ int main(int argc, char *argv[])
     }
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
-    if (my_rank == 1)
+    if (my_rank == 0)
     {
         printf("[%d]Send Left Neigh\n", my_rank);
         for (i = 0; i < picHeightBIG * 2; i++)
         {
             if (i % 2 == 0)
                 printf("\n");
-            printf("%u ", packLeftBlockToSend[i]);
+            printf("%u ", packRightBlockToSend[i]);
         }
-        //    printf("Right\n");
-        //    for (i = 0; i < picHeightBIG * 2; i++)
-        //    {
-        //        if (i % 2 == 0)
-        //            printf("\n---\n (%d)", i / 2);
-        //        printf("%u ", packRightBlockToSend[i]);
-        //    }
     }
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
@@ -224,191 +222,235 @@ int main(int argc, char *argv[])
     MPI_Status status;
     MPI_Request ch1; // o <------ x
     MPI_Request ch2; // x ------> o
+    MPI_Request ch3; // x ------> o
+    MPI_Request ch4; // x ------> o
 
     int send = my_rank;
     int rev = -1;
     int sizeSend = picHeightBIG * 2;
 
-    // o <------ x
-    if (my_rank == 0)
+    if (my_rank % 2 == 0)
     {
-        printf("[%d ]In ch1 REV only\n", my_rank);
-        //packLeftBlockToRecv
+
         MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch1);
+        MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch2);
+
+        if (my_rank == 0)
+        {
+
+            MPI_Send_init(zeros, sizeSend, MPI_UNSIGNED_CHAR, world_size - 1, 1, MPI_COMM_WORLD, &ch3);
+            MPI_Send_init(zeros, sizeSend, MPI_UNSIGNED_CHAR, world_size - 1, 1, MPI_COMM_WORLD, &ch4);
+        }
+        else
+        {
+            MPI_Send_init(packLeftBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch3);
+            MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch4);
+        }
     }
-    else if (my_rank == world_size - 1)
+    else
     {
-        printf("[%d ]In ch1 SEND only\n", my_rank);
         MPI_Send_init(packLeftBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch1);
-    }
-    else
-    {
-        if (my_rank % 2 == 1)
+        MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch2);
+
+        if (my_rank == world_size - 1)
         {
-            MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch1);
-            MPI_Send_init(packLeftBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch1);
+            MPI_Send_init(zeros, sizeSend, MPI_UNSIGNED_CHAR, 0, 1, MPI_COMM_WORLD, &ch3);
+            MPI_Send_init(zeros, sizeSend, MPI_UNSIGNED_CHAR, 0, 1, MPI_COMM_WORLD, &ch4);
         }
         else
         {
-            MPI_Send_init(packLeftBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch1);
-            MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch1);
+            MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch3);
+            MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch4);
         }
     }
 
-    // x ------> o
-    if (my_rank == 0)
-    {
-        MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 2, MPI_COMM_WORLD, &ch2);
-    }
-    else if (my_rank == world_size - 1)
-    {
-        MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 2, MPI_COMM_WORLD, &ch2);
-    }
-    else
-    {
-        if (my_rank % 2 == 1)
-        {
-            MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 2, MPI_COMM_WORLD, &ch2);
-            MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 2, MPI_COMM_WORLD, &ch2);
-        }
-        else
-        {
-            MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 2, MPI_COMM_WORLD, &ch2);
-            MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 2, MPI_COMM_WORLD, &ch2);
-        }
-    }
-
-    MPI_Start(&ch2);
-    MPI_Wait(&ch2, &status);
     MPI_Start(&ch1);
+    MPI_Start(&ch2);
+    MPI_Start(&ch3);
+    MPI_Start(&ch4);
     MPI_Wait(&ch1, &status);
+    MPI_Wait(&ch2, &status);
+    MPI_Wait(&ch3, &status);
+    MPI_Wait(&ch4, &status);
     printVectorcharNoBar('I', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
+
+    // every node is printing: left Side send, left Side recive |||| right send, right recv
+
     MPI_Barrier(MPI_COMM_WORLD);
-    usleep(500);
-    if (my_rank == 0)
+    usleep(2000);
+    int currentVIPPixel = 0;
+    for (x = 0; x < world_size; x++)
     {
-        printf("\n[%d]Hat nach recht gesendet R-BlockSend\n", my_rank);
-        for (i = 0; i < picHeightBIG * 2; i++)
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(2000);
+        printf("\n[%d /%d]\n", my_rank, world_size);
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(2000);
+        if (my_rank == x)
         {
-            if (i % 2 == 0)
-                printf("\n");
-            printf("%u ", packRightBlockToSend[i]);
+            printf("\n[%d]  lSend  |  rSend  | |  lReiv  |  rReiv  |\n", my_rank);
+            for (i = 0; i < picHeightBIG * 2; i++)
+            {
+                if (i % 2 == 0)
+                    printf("\n");
+
+                printf("[%d] ", my_rank);
+                printf("%3u ", packLeftBlockToSend[i]);
+                printf("%3u ", packLeftBlockToSend[i + 1]);
+                printf("| ");
+                printf("%3u ", packRightBlockToSend[i]);
+                printf("%3u ", packRightBlockToSend[i + 1]);
+                printf("| ");
+                printf("| ");
+                printf("%3u ", packLeftBlockToRecv[i]);
+                printf("%3u ", packLeftBlockToRecv[i + 1]);
+                printf("| ");
+                printf("%3u ", packRightBlockToRecv[i]);
+                printf("%3u ", packRightBlockToRecv[i + 1]);
+                i++;
+            }
+            printf("\n[%d] +++++++++++++++++++++++++++++++++++++++++\n", my_rank);
         }
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(2000);
     }
+
     if (my_rank == 0)
         printf("\n");
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(500);
-    if (my_rank == 1)
-    {
-        printf("\n[%d]Hat von links bekommen L-BlockRec\n", my_rank);
-        for (i = 0; i < picHeightBIG * 2; i++)
-        {
-            if (i % 2 == 0)
-                printf("\n");
-            printf("%u ", packLeftBlockToRecv[i]);
-        }
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(500);
-    abort();
 
     MPI_Barrier(MPI_COMM_WORLD);
-    usleep(500);
+    usleep(1000);
     printf("[%d] Shareing is finished\n", my_rank);
-    unsigned char *manipulated_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
+    int local_result_numsOfElms = ((picWidth * picHeight) / world_size);
+    unsigned char *local_result_PicMatrix = malloc(sizeof(unsigned char) * (local_result_numsOfElms));
 
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
     printVectorcharNoBar('I', init_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
-
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
+
     int myBoundL = start + (my_rank * blockOfElmNumber);
     int myBoundR = start + (((my_rank + 1) * blockOfElmNumber) - 1);
-    if (my_rank == 1)
+    for (i = 0; i < world_size; i++)
     {
-        for (y = start; y < (picHeightBIG - randPixs); y++)
+        if (i == my_rank)
         {
-            for (x = myBoundL; x <= myBoundR; x++)
+            for (y = start; y < (picHeightBIG - randPixs); y++)
             {
-
-                int localSum = 0;
-                for (v = 0; v <= 4; v++)
+                for (x = myBoundL; x <= myBoundR; x++)
                 {
-                    for (u = 0; u <= 4; u++)
+                    int localSum = 0;
+                    for (v = 0; v <= 4; v++)
                     {
-                        double elemOfMatrix = 0;
-                        double elemOfFilter = 0;
-                        int matrixX = (x + u - k);
-                        int matrixYY = y + v - k;
-                        int matrixY = (picWidthBIG * y) + picWidthBIG * (v - k);
-                        int posInMatrix = matrixX + matrixY;
-
-                        // take elem from left
-                        int easyPosInLeftNBlock = (myBoundL - matrixX) % 2;
-                        int posPushByY = easyPosInLeftNBlock + matrixYY * 2;
-                        if (matrixX < myBoundL)
+                        for (u = 0; u <= 4; u++)
                         {
+                            double elemOfMatrix = 0;
+                            double elemOfFilter = 0;
+                            int matrixX = (x + u - k);
+                            int matrixYY = y + v - k;
+                            int matrixY = (picWidthBIG * y) + picWidthBIG * (v - k);
+                            int posInMatrix = matrixX + matrixY;
+
+                            // take elem from left
                             int easyPosInLeftNBlock = (myBoundL - matrixX) % 2;
                             int posPushByY = easyPosInLeftNBlock + matrixYY * 2;
-                            printf("[%d] m:%d b:%d YES L  ELMPOS(%u) ELM(%u)\n", my_rank, matrixX, myBoundL, posPushByY, packLeftBlockToRecv[posPushByY]);
+                            unsigned char elemOfInterest;
+                            if (matrixX < myBoundL)
+                            {
+                                int easyPosInLeftNBlock = (myBoundL - matrixX) % 2;
+                                int posPushByY = easyPosInLeftNBlock + matrixYY * 2;
+                                elemOfInterest = packLeftBlockToRecv[posPushByY];
+                                printf("[%d] m:%d b:%d YES L  ELMPOS(%u) ELM(%u)\n", my_rank, matrixX, myBoundL, posPushByY, elemOfInterest);
+                            }
+                            // elm is in working range of node
+                            else
+                            {
+                                elemOfInterest = init_matrixBig[posInMatrix];
+                                printf("[%d] m:%d b:%d NO L  ELM(%u) \n", my_rank, matrixX, myBoundL, elemOfInterest);
+                            }
+
+                            // take elm from right
+                            if (matrixX > myBoundR)
+                            {
+                                elemOfInterest = packRightBlockToRecv[posPushByY];
+                                printf("[%d] m:%d b:%d YES R  ELMPOS(%u) ELM(%u)\n", my_rank, matrixX, myBoundR, posPushByY, elemOfInterest);
+                            }
+                            // elm is in working range of node
+                            else
+                            {
+                                elemOfInterest = init_matrixBig[posInMatrix];
+                                printf("[%d] m:%d b:%d NO R  ELM(%u)\n", my_rank, matrixX, myBoundR, elemOfInterest);
+                            }
+
+                            elemOfMatrix = elemOfInterest;
+
+                            int posInFilter = u + v * 5;
+                            elemOfFilter = filterMatrix[posInFilter];
+                            localSum += elemOfFilter * elemOfMatrix;
+
+                            //printf("Pos %d x %d I(%d) in Matrix: %3.3f\n", matrixYY, matrixX, posInMatrix, posInMatrix, elemOfMatrix);
+                            //              printf("POS(%d) Filter elem: %f | Martix elem: %f\n", posInFilter, elemOfFilter, elemOfMatrix);
+                            printf("[%d]+++ u%d\n", my_rank, u);
                         }
-                        // elm is in working range of node
-                        else
-                            printf("[%d] m:%d b:%d NO L  ELM(%u) \n", my_rank, matrixX, myBoundL, init_matrixBig[posInMatrix]);
-
-                        // take elm from right
-                        if (matrixX > myBoundR)
-                            printf("[%d] m:%d b:%d YES R  ELMPOS(%u) ELM(%u)\n", my_rank, matrixX, myBoundR, posPushByY, packRightBlockToRecv[posPushByY]);
-                        // elm is in working range of node
-                        else
-                            printf("[%d] m:%d b:%d NO R  ELM(%u)\n", my_rank, matrixX, myBoundR, init_matrixBig[posInMatrix]);
-
-                        elemOfMatrix = init_matrixBig[posInMatrix];
-
-                        int posInFilter = u + v * 5;
-                        elemOfFilter = filterMatrix[posInFilter];
-                        localSum += elemOfFilter * elemOfMatrix;
-
-                        //printf("Pos %d x %d I(%d) in Matrix: %3.3f\n", matrixYY, matrixX, posInMatrix, posInMatrix, elemOfMatrix);
-                        //              printf("POS(%d) Filter elem: %f | Martix elem: %f\n", posInFilter, elemOfFilter, elemOfMatrix);
-                        printf("[%d]+++ u%d\n", my_rank, u);
+                        printf("[%d]################################ u\n", my_rank);
+                        printf("[%d]---------------------------------------- v%d\n", my_rank, v);
                     }
-                    printf("[%d]################################ u\n", my_rank);
-                    printf("[%d]---------------------------------------- v%d\n", my_rank, v);
+                    printf("[%d]############################################## Fv\n", my_rank);
+                    if (localSum < 0)
+                        localSum = 0;
+                    else if (localSum > 255)
+                        localSum = 255;
+                    else
+                        ;
+
+                    printf("[%d]Inserting: (%d)\n", my_rank, localSum);
+                    new_matrixBig[x + y * picWidthBIG] = localSum;
+                    local_result_PicMatrix[currentVIPPixel] = localSum;
+                    //printf("localSum =%d\n", localSum);
+                    currentVIPPixel++;
+                    //for (i = 0; i < 10000000 * 2; i++)  ;
+                    printVectorcharNoBar('N', new_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 1);
+
+                    //printf("\n\n\n\n\n");
+                    //printf("\n\n\n\n\n");
+                    //abort();
                 }
-                printf("[%d]############################################## Fv\n", my_rank);
-                printf("[%d]---------------------------------------- x(%d)\n", my_rank, x);
-                if (localSum < 0)
-                    localSum = 0;
-                else if (localSum > 255)
-                    localSum = 255;
-                else
-                    ;
-                new_matrixBig[x + y * picWidthBIG] = localSum;
-                manipulated_PicMatrix[debCounter] = localSum;
-                //printf("localSum =%d\n", localSum);
-                debCounter++;
-                //for (i = 0; i < 10000000 * 2; i++)  ;
-                printVectorcharNoBar('N', new_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 0);
-                //printf("\n\n\n\n\n");
-                //printf("\n\n\n\n\n");
-                //abort();
+                printf("[%d]############################################## x\n", my_rank);
             }
-            abort();
-            printf("[%d]############################################## x\n", my_rank);
+            printf("[%d]---------------------------------------- y\n", my_rank);
         }
-        printf("[%d]---------------------------------------- y\n", my_rank);
     }
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
+    printVectorcharNoBar('A', new_matrixBig, picWidthBIG * picHeightBIG, picWidthBIG, my_rank, 1);
     MPI_Barrier(MPI_COMM_WORLD);
     usleep(500);
 
     // ------------------------------------------------------------[ RESULT ]--
 
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
     if (my_rank == 0)
         printf("------------------------------------------[ Result ]\n");
-    //printVectorcharNoBar('r', manipulated_PicMatrix, elemsToHandle, picWidth, my_rank, 0);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
+    if (my_rank == 1)
+    {
+        for (i = 0; i < local_result_numsOfElms; i++)
+        {
+            if (i % blockOfElmNumber == 0)
+                printf("\n");
+            printf("%3u ", local_result_PicMatrix[i]);
+        }
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
+    //printVectorcharNoBar('r', new_matrixBig, elemsToHandle, picWidth, my_rank, 0);
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(500);
+    abort();
 
     // -------------------------------------------------------[ RESULT SAVE ]--
     // write and reload result.
@@ -418,7 +460,7 @@ int main(int argc, char *argv[])
         err = MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &fhandle);
         if (err)
             printf("Error opening the file. \n");
-        MPI_File_write(fhandle, manipulated_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
+        MPI_File_write(fhandle, local_result_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
         MPI_File_close(&fhandle);
         printf("Result saved. Check < %s >.\n", pathToResultFile);
         unsigned char *reload_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
@@ -495,11 +537,14 @@ void *printVectorNoBar(char tag, double *vector, int dimOfVec, int row, int your
   */
 void *printVectorcharNoBar(char tag, unsigned char *vector, int dimOfVec, int row, int yourRank, int rankToPrint)
 {
+
     int hit = dimOfVec / row;
     int m = 0;
     int index = 0;
     if (yourRank == rankToPrint)
     {
+        printf("Printing\n          ");
+
         printf("[%d][%c]  > ", yourRank, tag);
         printf("\n          ");
         for (m = 0; m < hit; m++)
@@ -515,7 +560,8 @@ void *printVectorcharNoBar(char tag, unsigned char *vector, int dimOfVec, int ro
                 index++;
             }
             if (m == 81 || m == 85 || m == 89 || m == 93)
-                printf("!!! ");
+                //printf("!!! ");
+                printf("%3u ", vector[m]);
 
             else
                 printf("%3u ", vector[m]);
@@ -541,6 +587,7 @@ void h_rootPrintHelp(int my_rank)
         printf("                                       [2] Relief  \n");
         printf("                                       [3] Edge dec.  \n");
         printf("\n");
+        printf("*Parameter -w <number as Integer> :    Specifies the width of the given picture. Option is crucial");
         printf("Example call:\n");
         printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
     }
@@ -558,9 +605,10 @@ void h_setAndCheckParams(int argc, char *argv[])
     int c;
     int man_s = -1;
     int man_f = -1;
+    int man_w = -1;
 
     opterr = 0;
-    while ((c = getopt(argc, argv, "hs:f:")) != -1)
+    while ((c = getopt(argc, argv, "hs:f:w:")) != -1)
         switch (c)
         {
         case 'h':
@@ -575,6 +623,10 @@ void h_setAndCheckParams(int argc, char *argv[])
             sscanf(optarg, "%lf", &numberOfFilterTo);
             man_f = 0;
             break;
+        case 'w':
+            sscanf(optarg, "%d", &picWidth);
+            man_w = 0;
+            break;
         case '?':
             if (my_rank == 0)
             {
@@ -586,7 +638,6 @@ void h_setAndCheckParams(int argc, char *argv[])
                 }
                 else
                 {
-
                     fprintf(stderr,
                             "Unknown option character `\\x%x'.\n",
                             optopt);
@@ -596,7 +647,7 @@ void h_setAndCheckParams(int argc, char *argv[])
             printf("Error. Can't process input.\n");
             abort();
         }
-    int res = man_s + man_f;
+    int res = man_s + man_f + man_w;
     if (res != 0)
     {
         if (my_rank == 0)
@@ -615,77 +666,3 @@ void h_setAndCheckParams(int argc, char *argv[])
     for (index = optind; index < argc; index++)
         printf("Non-option argument %s\n", argv[index]);
 }
-
-/* Prints vector 
-    for (int i = 0; i < world_size; i++)
-    {
-        if (my_rank == i)
-        {
-            printf("#%dr#\n", my_rank);
-            for (int x = 0; x < dimOfMatrix; x++)
-            {
-                if ((x % dimOfMatrix == 0) && (x != 0))
-                {
-                    printf("|\n");
-                    printf("%f ", bufferVector[x]);
-                }
-                else
-                {
-                    printf("%f ", bufferVector[x]);
-                }
-            }
-            printf("|\n");
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
-    }
-    */
-/* Prints matrix 
-    for (int i = 0; i < world_size; i++)
-    {
-        if (my_rank == i)
-        {
-            printf("#%dr#\n", my_rank);
-            for (int x = 0; x < elemsToHandle; x++)
-            {
-                if ((x % dimOfMatrix == 0) && (x != 0))
-                {
-                    printf("|\n");
-                    printf("%f ", bufferMatrix[x]);
-                }
-                else
-                {
-                    printf("%f ", bufferMatrix[x]);
-                }
-            }
-            printf("|\n");
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
-    }
-    */
-
-/*Prints B
-    printf("Vector B\n");
-    for (int i = 0; i < dimOfMatrix; i++)
-        printf("%f ", bufferVector[i]);
-    printf("\n\n");
-    * /
-
-/*Prints X
-    printf("Vector X\n");
-    for (int i = 0; i < dimOfMatrix; i++)
-        printf("%f ", xVector[i]);
-    printf("\n\n");
-*/
-
-/* Wrapper
-   for (int l = 0; l < world_size; l++)
-    {
-        if (my_rank == l)
-        {
-            MPI_Barrier(MPI_COMM_WORLD);
-            usleep(100);
-        }
-    }
-    */
