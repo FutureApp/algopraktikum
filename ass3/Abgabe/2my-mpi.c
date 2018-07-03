@@ -436,7 +436,7 @@ void h_rootPrintHelp(int my_rank)
         //xprintf("*Parameter -e <number as double>:     Specifies epsilon. Need to be double. \n");
         //xprintf("\n");
         //xprintf("Example call:\n");
-        //xprintf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
+        //xprintf("mpicc -o ./app1 ./2my-mpi.c && mpiexec -f ./hosts -n 4 ./app1 -m Matrix_A_8x8 -v Vector_b_8x -e 0.0000000001\n");
     }
 }
 /**
@@ -494,66 +494,3 @@ void h_setAndCheckParams(int argc, char *argv[])
     for (index = optind; index < argc; index++)
         printf("Non-option argument %s\n", argv[index]);
 }
-
-/* Prints vector 
-    for (int i = 0; i < world_size; i++)
-    {
-        if (my_rank == i)
-        {
-            printf("#%dr#\n", my_rank);
-            for (int x = 0; x < dimOfMatrix; x++)
-            {
-                if ((x % dimOfMatrix == 0) && (x != 0))
-                {
-                    printf("|\n");
-                    printf("%f ", bufferVector[x]);
-                }
-                else
-                {
-                    printf("%f ", bufferVector[x]);
-                }
-            }
-            printf("|\n");
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
-    }
-    */
-/* Prints matrix 
-    for (int i = 0; i < world_size; i++)
-    {
-        if (my_rank == i)
-        {
-            printf("#%dr#\n", my_rank);
-            for (int x = 0; x < elemsToHandle; x++)
-            {
-                if ((x % dimOfMatrix == 0) && (x != 0))
-                {
-                    printf("|\n");
-                    printf("%f ", bufferMatrix[x]);
-                }
-                else
-                {
-                    printf("%f ", bufferMatrix[x]);
-                }
-            }
-            printf("|\n");
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(200);
-    }
-    */
-
-/*Prints B
-    printf("Vector B\n");
-    for (int i = 0; i < dimOfMatrix; i++)
-        printf("%f ", bufferVector[i]);
-    printf("\n\n");
-    * /
-
-/*Prints X
-    printf("Vector X\n");
-    for (int i = 0; i < dimOfMatrix; i++)
-        printf("%f ", xVector[i]);
-    printf("\n\n");
-*/

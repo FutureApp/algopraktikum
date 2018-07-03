@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
     //MPI_File_set_view(mpi_file, 0, MPI_UNSIGNED_CHAR, MPI_UNSIGNED_CHAR, "native", MPI_INFO_NULL);
     MPI_Type_commit(&vector2);
 
-    MPI_File_read_ordered(mpi_file, ori_PicMatrix, 1, vector2, MPI_STATUS_IGNORE);
+    MPI_File_read_ordered(mpi_file, ori_PicMatrix, 1, col, MPI_STATUS_IGNORE);
     MPI_File_close(&mpi_file);
     if (my_rank == 0)
         for (i = 0; i < picWidth * picHeight; i++)
@@ -86,7 +86,6 @@ int main(int argc, char *argv[])
         }
     if (my_rank == 0)
         printf("\n");
-    abort();
     // MPI_Scatter(new_matrixA, 1, vector2, new_matrixBuffer, linesOfMatrix * columnsOfMatrixForProc, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     //***************
     //printVectorcharNoBar('O', ori_PicMatrix, elemsToHandle, 16, my_rank, 0);

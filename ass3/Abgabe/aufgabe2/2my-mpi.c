@@ -8,6 +8,7 @@
  Description:
 MPI program that solves a set of linear equations Ax = b with the Jacobi method that
 converges if the distance between the vectors x^(k) and x^(k+1) is small enough. (Calc by Cols)
+The special feature of this programm is that the Matrix is scattered in parts as a block of columns.
 /************************************************************************/
 #include <stdio.h>
 #include "mpi.h"
@@ -186,7 +187,7 @@ int main(int argc, char *argv[])
     double *new_matrixA = malloc(sizeof(double) * dimOfMatrix * dimOfMatrix);
 
     new_matrixA = bufferMatrix;
-    MPI_Scatter(new_matrixA, 1, vector2, new_matrixBuffer, linesOfMatrix * columnsOfMatrixForProc, vector2, 0, MPI_COMM_WORLD);
+    MPI_Scatter(new_matrixA, 1, vector2, new_matrixBuffer, linesOfMatrix * columnsOfMatrixForProc, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     //distributes the Matrix to the corresponding nodes
 
     double *new_vectorBuffer = malloc(sizeof(double) * dimOfMatrix);

@@ -3,7 +3,7 @@
  Author: Michael Czaja, Muttaki Aslanparcasi
  matriclenumber: 4293033, 5318807
  Assignment : 3
- Task: 1-2
+ Task: 1
 
  Description:
 MPI program that solves a set of linear equations Ax = b with the Jacobi method that
