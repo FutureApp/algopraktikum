@@ -70,23 +70,45 @@ int main(int argc, char *argv[])
     //MPI_File_read(mpi_file, ori_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
     //***************************************
     MPI_Datatype col, vector2;
-    //MPI_Type_vector(blocklength = 2, stride = 5, old_type = MPI_INT, &newtype);
+    //MPI_Type_vector(count =1,blocklength = 2, stride = 5, old_type = MPI_INT, &newtype);
     MPI_Type_vector(picHeight, (picWidth / world_size), picWidth, MPI_UNSIGNED_CHAR, &col);
     MPI_Type_commit(&col);
-    MPI_Type_create_resized(col, 0, picWidth * sizeof(unsigned char), &vector2);
+    MPI_Type_create_resized(col, 0, (picWidth/world_size) * sizeof(unsigned char), &vector2);
     //MPI_File_set_view(mpi_file, 0, MPI_UNSIGNED_CHAR, MPI_UNSIGNED_CHAR, "native", MPI_INFO_NULL);
     MPI_Type_commit(&vector2);
 
-    MPI_File_read_ordered(mpi_file, ori_PicMatrix, 1, col, MPI_STATUS_IGNORE);
+    MPI_File_read(mpi_file, ori_PicMatrix, picHeight*picWidth, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
     MPI_File_close(&mpi_file);
     if (my_rank == 0)
         for (i = 0; i < picWidth * picHeight; i++)
-        {
+        {   
+            if(i%picWidth == 0)
+                printf("\n");
             printf("%3u ", ori_PicMatrix[i]);
         }
     if (my_rank == 0)
         printf("\n");
-    // MPI_Scatter(new_matrixA, 1, vector2, new_matrixBuffer, linesOfMatrix * columnsOfMatrixForProc, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    int numberOfElements = (picWidth/world_size)*picHeight;
+    int maxNumberOfElement = picWidth *picHeight;
+    if(my_rank==0)
+        printf("%d To handle\n",numberOfElements);
+    
+    unsigned char *buf_ori_PicMatrix = malloc(sizeof(unsigned char) * numberOfElements);
+    for(i = 0;i < numberOfElements;i++)
+        buf_ori_PicMatrix[i]=0;
+    
+    MPI_Scatter(ori_PicMatrix, 1, vector2, buf_ori_PicMatrix, numberOfElements, MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
+    
+    if (my_rank == 3){
+    printf("\n");
+    printf("After Scatter   \n");
+        for (i = 0; i < numberOfElements; i++)
+        {   
+            if(i%(picWidth/world_size) == 0)
+                printf("\n");
+            printf("%3u ", buf_ori_PicMatrix[i]);
+        }
+    }
     //***************
     //printVectorcharNoBar('O', ori_PicMatrix, elemsToHandle, 16, my_rank, 0);
 
@@ -178,7 +200,7 @@ int main(int argc, char *argv[])
         for (x = start; x < (picWidthBIG - randPixs); x++)
         {
             //      printf("working on %d\n", (x + picWidthBIG * i));
-            init_matrixBig[x + picWidthBIG * y] = ori_PicMatrix[posInOriMatrix];
+            init_matrixBig[x+(x*my_rank) + picWidthBIG * y] = ori_PicMatrix[posInOriMatrix];
             posInOriMatrix++;
         }
     posInOriMatrix = 0;
