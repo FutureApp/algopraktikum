@@ -134,6 +134,7 @@ int main(int argc, char **argv)
     x = 0;
     int p = 0;
     do{
+   abort();
         if (p < proces / PP)
         {
 
