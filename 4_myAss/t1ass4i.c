@@ -456,7 +456,6 @@ int main(int argc, char *argv[])
                             printf("[%d]################################ u\n", my_rank);
                             printf("[%d]---------------------------------------- v%d\n", my_rank, v);
                         }
-                    abort();
                     printf("[%d]############################################## Fv\n", my_rank);
                     if (localSum < 0)
                         localSum = 0;
@@ -475,7 +474,6 @@ int main(int argc, char *argv[])
 
                     //printf("\n\n\n\n\n");
                     //printf("\n\n\n\n\n");
-                    //abort();
                 }
                 printf("[%d]############################################## x\n", my_rank);
             }
