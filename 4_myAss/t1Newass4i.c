@@ -24,15 +24,18 @@ converges if the distance between the vectors x^(k) and x^(k+1) is small enough.
 void h_rootPrintHelp(int my_rank);
 void h_setAndCheckParams(int argc, char *argv[]);
 
-char *pathToSrcPic;      // IN - -s
-double numberOfFilterTo; // IN - -f
-int picWidth;            // IN - -w
-
-int my_rank, world_size; //MPI-STUFF
+void *shiftyMatrix(double *matrix_new, double *matrix_old, int sizeOfMatrix)
 {
     for (int s = 0; s < sizeOfMatrix; s++)
         matrix_new[s] = matrix_old[s];
 }
+
+char *pathToSrcPic;      // IN - -s
+double numberOfFilterTo; // IN - -f
+int picWidth;            // IN - -w
+int retrys;              // IN - -r
+
+int my_rank, world_size; //MPI-STUFF
 
 int main(int argc, char *argv[])
 {
@@ -43,7 +46,7 @@ int main(int argc, char *argv[])
     MPI_File mpi_file;
     MPI_Offset fsize;
 
-    int i;
+    int i, x, y, u, v, k;
     int err = 0;
 
     int picHeight = 0;
@@ -113,17 +116,24 @@ int main(int argc, char *argv[])
             break;
         }
     }
+    if (my_rank == 0)
+        for (i = 0; i < 5 * 5; i++)
+            if (i % 5 == 0)
+                printf("\n%f ", filterMatrix[i]);
+            else
+                printf("%f ", filterMatrix[i]);
 
     if (my_rank == 0)
-        printf("[%d] Program input: (filter:%f)(width:%d)", numberOfFilterTo, picWidth);
+        printf("[%d] Program input: (filter:%f) ", my_rank, numberOfFilterTo);
 
     // ------------------------------------------------------------[ Read data ]--
     err = MPI_File_open(MPI_COMM_SELF, pathToSrcPic, MPI_MODE_RDONLY, MPI_INFO_NULL, &mpi_file);
     err = MPI_File_get_size(mpi_file, &fsize);
 
     picHeight = (fsize / (sizeof(unsigned char)) / picWidth);
-    int elemsToHandle = picHeight * picWidth;
-    unsigned char *ori_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
+    int elemsToHandleTOTAL = picHeight * picWidth;
+    unsigned char *ori_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandleTOTAL);
+    unsigned char *ori_result_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandleTOTAL);
 
     MPI_Datatype col, vector2;
     MPI_Type_vector(picHeight, (picWidth / world_size), picWidth, MPI_UNSIGNED_CHAR, &col);
@@ -134,79 +144,272 @@ int main(int argc, char *argv[])
     MPI_File_read(mpi_file, ori_PicMatrix, picHeight * picWidth, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
     MPI_File_close(&mpi_file);
     // ------------------------------------------------------------[ Scatter data ]--
-    //TODO
+    int local_numberOfElmsPerRow = (picWidth / world_size);
+    int local_numberElmsToHandle = (picWidth / world_size) * picHeight;
+    int local_work_numberElmsToHandle = (picWidth / world_size) * (picHeight + 4);
+    unsigned char *local_partOfOriPicFromCom = malloc(sizeof(unsigned char) * local_numberElmsToHandle);
+    unsigned char *local_result_partOfOriPicFromCom = malloc(sizeof(unsigned char) * local_numberElmsToHandle);
+    unsigned char *local_work_partOfOriPic = malloc(sizeof(unsigned char) * local_work_numberElmsToHandle);
 
-    // ------------------------------------------------------------[ Prepare for share ]--
-    unsigned char *packLeftBlockToSend = malloc(sizeof(unsigned char) * picHeightBIG * 2);
-    unsigned char *packRightBlockToSend = malloc(sizeof(unsigned char) * picHeightBIG * 2);
-
-    unsigned char *packRightBlockToRecv = malloc(sizeof(unsigned char) * picHeightBIG * 2);
-    unsigned char *packLeftBlockToRecv = malloc(sizeof(unsigned char) * picHeightBIG * 2);
-
-    // ------------------------------------------------------------[ channel init ]--
-    MPI_Status status;
-    MPI_Request ch1; // o <------ x
-    MPI_Request ch2; // x ------> o
-    MPI_Request ch3; // o ------> x
-    MPI_Request ch4; // x ------> o
-
-    int sizeSend = picHeightBIG * 2;
-    // Here we set the channels for later communication.
-    if (1 == 1)
+    for (i = 0; i < local_work_numberElmsToHandle; i++)
     {
+        local_work_partOfOriPic[i] = 0;
+        local_result_partOfOriPicFromCom[i] = 9;
+    }
+
+    for (int res = 0; res < retrys; res++)
+    {
+
+        MPI_Scatter(ori_PicMatrix, 1, vector2, local_partOfOriPicFromCom, local_numberElmsToHandle, MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
+
+        for (i = 0; i < local_numberElmsToHandle; i++)
+            local_work_partOfOriPic[i + 2 * local_numberOfElmsPerRow] = local_partOfOriPicFromCom[i];
+
+        // ------------------------------------------------------------[ Prepare for share ]--
+        /*
+    // Checks if every node has the right part of pic.
+    for (x = 0; x < world_size; x++)
+    {
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(2000);
+        if (my_rank == x)
+        {
+            printf("[%d] Printing my scatter part.\n", my_rank);
+            for (i = 0; i < local_work_numberElmsToHandle; i++)
+            {
+                if (i % local_numberOfElmsPerRow == 0)
+                    printf("\n");
+                printf("%3u ", local_work_partOfOriPic[i]);
+            }
+            printf("\n");
+        }
+    }
+    */
+        int sizeOfSendReivBlocks = (picHeight + 4) * 2;
+        unsigned char *packLeftBlockToSend = malloc(sizeof(unsigned char) * sizeOfSendReivBlocks);
+        unsigned char *packRightBlockToSend = malloc(sizeof(unsigned char) * sizeOfSendReivBlocks);
+
+        unsigned char *packLeftBlockToRecv = malloc(sizeof(unsigned char) * sizeOfSendReivBlocks);
+        unsigned char *packRightBlockToRecv = malloc(sizeof(unsigned char) * sizeOfSendReivBlocks);
+
+        unsigned char *zeros = malloc(sizeof(unsigned char) * sizeOfSendReivBlocks);
+        for (i = 0; i < sizeOfSendReivBlocks; i++)
+        {
+            packLeftBlockToSend[i] = 0;
+            packRightBlockToSend[i] = 0;
+            packLeftBlockToRecv[i] = 0;
+            packRightBlockToRecv[i] = 0;
+            zeros[i] = 0;
+        }
+        // ------------------------------------------------------------[ channel init ]--
+        MPI_Status status;
+        MPI_Request ch1; // o <------ x
+        MPI_Request ch2; // x ------> o
+        MPI_Request ch3; // o ------> x
+        MPI_Request ch4; // x ------> o
+
+        // Here we set the channels for later communication.
         if (my_rank % 2 == 0)
         {
 
-            MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch1);
-            MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch2);
+            MPI_Recv_init(packRightBlockToRecv, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch1);
+            MPI_Send_init(packRightBlockToSend, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch2);
 
             if (my_rank == 0)
             {
 
-                MPI_Send_init(zeros, sizeSend, MPI_UNSIGNED_CHAR, world_size - 1, 1, MPI_COMM_WORLD, &ch3);
-                MPI_Send_init(zeros, sizeSend, MPI_UNSIGNED_CHAR, world_size - 1, 1, MPI_COMM_WORLD, &ch4);
+                MPI_Send_init(zeros, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, world_size - 1, 1, MPI_COMM_WORLD, &ch3);
+                MPI_Send_init(zeros, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, world_size - 1, 1, MPI_COMM_WORLD, &ch4);
             }
             else
             {
-                MPI_Send_init(packLeftBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch3);
-                MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch4);
+                MPI_Send_init(packLeftBlockToSend, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch3);
+                MPI_Recv_init(packLeftBlockToRecv, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch4);
             }
         }
         else
         {
-            MPI_Send_init(packLeftBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch1);
-            MPI_Recv_init(packLeftBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch2);
+            MPI_Send_init(packLeftBlockToSend, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch1);
+            MPI_Recv_init(packLeftBlockToRecv, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, my_rank - 1, 1, MPI_COMM_WORLD, &ch2);
 
             if (my_rank == world_size - 1)
             {
-                MPI_Send_init(zeros, sizeSend, MPI_UNSIGNED_CHAR, 0, 1, MPI_COMM_WORLD, &ch3);
-                MPI_Send_init(zeros, sizeSend, MPI_UNSIGNED_CHAR, 0, 1, MPI_COMM_WORLD, &ch4);
+                MPI_Send_init(zeros, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, 0, 1, MPI_COMM_WORLD, &ch3);
+                MPI_Send_init(zeros, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, 0, 1, MPI_COMM_WORLD, &ch4);
             }
             else
             {
-                MPI_Recv_init(packRightBlockToRecv, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch3);
-                MPI_Send_init(packRightBlockToSend, sizeSend, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch4);
+                MPI_Recv_init(packRightBlockToRecv, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch3);
+                MPI_Send_init(packRightBlockToSend, sizeOfSendReivBlocks, MPI_UNSIGNED_CHAR, my_rank + 1, 1, MPI_COMM_WORLD, &ch4);
+            }
+        }
+        // ------------------------------------------------------------[ Pack data ]--
+
+        for (y = 0; y < picHeight; y++)
+        {
+            int pos = (y + 2) * 2;
+            packLeftBlockToSend[pos] = local_partOfOriPicFromCom[y * local_numberOfElmsPerRow];
+            packLeftBlockToSend[pos + 1] = local_partOfOriPicFromCom[(y * local_numberOfElmsPerRow) + 1];
+
+            packRightBlockToSend[pos] = local_partOfOriPicFromCom[((y + 1) * local_numberOfElmsPerRow) - 2];
+            packRightBlockToSend[pos + 1] = local_partOfOriPicFromCom[((y + 1) * local_numberOfElmsPerRow) - 1];
+        }
+        // ------------------------------------------------------------[ Exchange data ]--
+        MPI_Start(&ch1);
+        MPI_Start(&ch2);
+        MPI_Start(&ch3);
+        MPI_Start(&ch4);
+        MPI_Wait(&ch1, &status);
+        MPI_Wait(&ch2, &status);
+        MPI_Wait(&ch3, &status);
+        MPI_Wait(&ch4, &status);
+
+        /*
+    // prints the content of the send and reiv buffers.
+    for (x = 0; x < world_size; x++)
+    {
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(2000);
+        printf("\n[%d /%d]\n", my_rank, world_size);
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(2000);
+        if (my_rank == x)
+        {
+            printf("\n[%d]  lSend  |  rSend  | |  lReiv  |  rReiv  |\n", my_rank);
+            for (i = 0; i < sizeOfSendReivBlocks; i++)
+            {
+                if (i % 2 == 0)
+                    printf("\n");
+
+                printf("[%d] ", my_rank);
+                printf("%3u ", packLeftBlockToSend[i]);
+                printf("%3u ", packLeftBlockToSend[i + 1]);
+                printf("| ");
+                printf("%3u ", packRightBlockToSend[i]);
+                printf("%3u ", packRightBlockToSend[i + 1]);
+                printf("| ");
+                printf("| ");
+                printf("%3u ", packLeftBlockToRecv[i]);
+                printf("%3u ", packLeftBlockToRecv[i + 1]);
+                printf("| ");
+                printf("%3u ", packRightBlockToRecv[i]);
+                printf("%3u ", packRightBlockToRecv[i + 1]);
+                i++;
+            }
+            printf("\n[%d] +++++++++++++++++++++++++++++++++++++++++\n", my_rank);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+        usleep(2000);
+    }
+    */
+
+        // ------------------------------------------------------------[ Calculate ]--
+
+        double localSum = 0;
+        double filterElm;
+        int sourcePosX, sourcePosY, posLBlock, posRBlock;
+        unsigned char elmOfInterest, elmToSave;
+        k = 2;
+        int twoK = (2 * k);
+        for (y = 2; y < picHeight + 2; y++)
+        {
+            for (x = 0; x < local_numberOfElmsPerRow; x++)
+            {
+                localSum = 0;
+                for (v = 0; v <= twoK; v++)
+                {
+                    for (u = 0; u <= twoK; u++)
+                    {
+                        filterElm = filterMatrix[u + v * 5];
+
+                        sourcePosY = y + (v - k);
+                        sourcePosX = x + (u - k);
+
+                        if (sourcePosX < 0)
+                        {
+                            posLBlock = sourcePosX + 2;
+                            //if (my_rank == 0)
+                            //{
+                            //    printf("\n| y= %3d -- Lx=%3d", sourcePosY, posLBlock);
+                            //}
+                            elmOfInterest = packLeftBlockToRecv[posLBlock + (sourcePosY * 2)];
+                            //elmOfInterest = 1 ;
+                        }
+                        else if (sourcePosX > (local_numberOfElmsPerRow - 1))
+                        {
+                            posRBlock = sourcePosX % 2;
+                            //if (my_rank == 0)
+                            //{
+                            //    printf("\n| y= %3d -- Rx=%3d", sourcePosY, posRBlock);
+                            //}
+                            elmOfInterest = packRightBlockToRecv[posRBlock + (sourcePosY * 2)];
+                            //elmOfInterest = 2;
+                        }
+                        else
+                            elmOfInterest = local_work_partOfOriPic[sourcePosX + sourcePosY * local_numberOfElmsPerRow];
+
+                        localSum += filterElm * elmOfInterest;
+                    }
+                    /*
+                if (my_rank == 0)
+                    printf("\n----------");
+                */
+                }
+                if (localSum < 0)
+                    localSum = 0;
+                if (localSum > 255)
+                    localSum = 255;
+
+                elmToSave = localSum;
+                int posi = x + ((y - 2) * local_numberOfElmsPerRow);
+                // if (my_rank == 0)
+                //     printf("\n---------- pos %d", posi);
+                local_result_partOfOriPicFromCom[(x + ((y - 2) * local_numberOfElmsPerRow))] = elmToSave;
+            }
+
+            // Checks if every node has the right part of pic.
+            /*
+        for (int z = 0; z < world_size; z++)
+        {
+            MPI_Barrier(MPI_COMM_WORLD);
+            usleep(2000);
+            if (my_rank == z)
+            {
+                printf("[%d] Printing step 1.\n", my_rank);
+                for (int p = 0; p < local_numberElmsToHandle; p++)
+                {
+                    if (p % local_numberOfElmsPerRow == 0)
+                        printf("\n");
+                    printf("%3u ", local_result_partOfOriPicFromCom[p]);
+                }
+                printf("\n");
+            }
+        }
+      
+    */
+        }
+        // ------------------------------------------------------------[ RESULT ]--
+        if (my_rank == 0)
+            printf("------------------------------------------[ Result ]\n");
+
+        MPI_Gather(local_result_partOfOriPicFromCom, local_numberElmsToHandle, MPI_UNSIGNED_CHAR, ori_result_PicMatrix, 1, vector2, 0, MPI_COMM_WORLD);
+        MPI_Gather(local_result_partOfOriPicFromCom, local_numberElmsToHandle, MPI_UNSIGNED_CHAR, ori_result_PicMatrix, 1, vector2, 0, MPI_COMM_WORLD);
+    }
+    /*
+    if (my_rank == 0)
+    {
+        printf("\nRESULT\n");
+        for (i = 0; i < elemsToHandleTOTAL; i++)
+        {
+            if (i % picWidth == 0)
+                printf("\n");
+            else
+            {
+                printf("%3u ", ori_result_PicMatrix[i]);
             }
         }
     }
-    // Perpare data for exchange
-    // ------------------------------------------------------------[ Exchange data ]--
-    MPI_Start(&ch1);
-    MPI_Start(&ch2);
-    MPI_Start(&ch3);
-    MPI_Start(&ch4);
-    MPI_Wait(&ch1, &status);
-    MPI_Wait(&ch2, &status);
-    MPI_Wait(&ch3, &status);
-    MPI_Wait(&ch4, &status);
-
-    //
-
-    // ------------------------------------------------------------[ RESULT ]--
-    if (my_rank == 0)
-        printf("------------------------------------------[ Result ]\n");
-
-    //MPI_Gather(local_result_PicMatrix, local_result_numsOfElms, MPI_UNSIGNED_CHAR, ori_PicMatrix, 1, vector2, 0, MPI_COMM_WORLD);
+    */
 
     // -------------------------------------------------------[ RESULT SAVE ]--
     // write and reload result.
@@ -216,15 +419,15 @@ int main(int argc, char *argv[])
         err = MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
         if (err)
             printf("Error opening the file. \n");
-        MPI_File_write(mpi_file, local_result_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
+        MPI_File_write(mpi_file, ori_result_PicMatrix, elemsToHandleTOTAL, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
         MPI_File_close(&mpi_file);
         printf("Result saved. Check < %s >.\n", pathToResultFile);
-        unsigned char *reload_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandle);
+        unsigned char *reload_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandleTOTAL);
         MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
-        MPI_File_read(mpi_file, reload_PicMatrix, elemsToHandle, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
+        MPI_File_read(mpi_file, reload_PicMatrix, elemsToHandleTOTAL, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
         MPI_File_close(&mpi_file);
         printf("------------------------------------------[Result rel.]\n");
-        // printVectorcharNoBar('R', reload_PicMatrix, elemsToHandle, picWidth, my_rank, 0);
+        // printVectorcharNoBar('R', reload_PicMatrix, elemsToHandleTOTAL, picWidth, my_rank, 0);
     }
 
     printf("[node %d] ExEnd.\n", my_rank);
@@ -249,6 +452,7 @@ void h_rootPrintHelp(int my_rank)
         printf("                                       [3] Edge dec.  \n");
         printf("\n");
         printf("*Parameter -w <number as Integer> :    Specifies the width of the given picture. Option is crucial");
+        printf("*Parameter -r <number as Integer> :    Specifies how many times a given filter should be applied");
         printf("Example call:\n");
         printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
     }
@@ -266,9 +470,9 @@ void h_setAndCheckParams(int argc, char *argv[])
     int man_s = -1;
     int man_f = -1;
     int man_w = -1;
-
+    int man_r = -1;
     opterr = 0;
-    while ((c = getopt(argc, argv, "hs:f:w:")) != -1)
+    while ((c = getopt(argc, argv, "hs:f:w:r:")) != -1)
         switch (c)
         {
         case 'h':
@@ -278,6 +482,10 @@ void h_setAndCheckParams(int argc, char *argv[])
         case 's':
             pathToSrcPic = optarg;
             man_s = 0;
+            break;
+        case 'r':
+            sscanf(optarg, "%d", &retrys);
+            man_r = 0;
             break;
         case 'f':
             sscanf(optarg, "%lf", &numberOfFilterTo);
@@ -307,7 +515,7 @@ void h_setAndCheckParams(int argc, char *argv[])
             printf("Error. Can't process input.\n");
             abort();
         }
-    int res = man_s + man_f + man_w;
+    int res = man_s + man_f + man_w + man_r;
     if (res != 0)
     {
         if (my_rank == 0)
