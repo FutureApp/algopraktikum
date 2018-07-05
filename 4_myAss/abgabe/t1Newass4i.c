@@ -2,8 +2,8 @@
  Program: my-mpi-jacobi.c
  Author: Michael Czaja, Muttaki Aslanparcasi
  matriclenumber: 4293033, 5318807
- Assignment : 3
- Task: 2
+ Assignment : 4
+ Task: 1
 
  Description:
 MPI program that solves a set of linear equations Ax = b with the Jacobi method that
@@ -131,9 +131,6 @@ int main(int argc, char *argv[])
     err = MPI_File_get_size(mpi_file, &fsize);
 
     picHeight = (fsize / (sizeof(unsigned char)) / picWidth);
-    int tempWidth= picHeight;
-    picHeight = picWidth;
-    picWidth=tempWidth;
     int elemsToHandleTOTAL = picHeight * picWidth;
     unsigned char *ori_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandleTOTAL);
     unsigned char *ori_result_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandleTOTAL);
@@ -160,10 +157,9 @@ int main(int argc, char *argv[])
         local_result_partOfOriPicFromCom[i] = 9;
     }
 
+    MPI_Scatter(ori_PicMatrix, 1, vector2, local_partOfOriPicFromCom, local_numberElmsToHandle, MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
     for (int res = 0; res < retrys; res++)
     {
-
-        MPI_Scatter(ori_PicMatrix, 1, vector2, local_partOfOriPicFromCom, local_numberElmsToHandle, MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
 
         for (i = 0; i < local_numberElmsToHandle; i++)
             local_work_partOfOriPic[i + 2 * local_numberOfElmsPerRow] = local_partOfOriPicFromCom[i];
@@ -395,9 +391,10 @@ int main(int argc, char *argv[])
         if (my_rank == 0)
             printf("------------------------------------------[ Result ]\n");
 
-        MPI_Gather(local_result_partOfOriPicFromCom, local_numberElmsToHandle, MPI_UNSIGNED_CHAR, ori_result_PicMatrix, 1, vector2, 0, MPI_COMM_WORLD);
-        MPI_Gather(local_result_partOfOriPicFromCom, local_numberElmsToHandle, MPI_UNSIGNED_CHAR, ori_result_PicMatrix, 1, vector2, 0, MPI_COMM_WORLD);
+        for (i = 0; i < local_numberElmsToHandle; i++)
+            local_partOfOriPicFromCom[i] = local_result_partOfOriPicFromCom[i];
     }
+    MPI_Gather(local_result_partOfOriPicFromCom, local_numberElmsToHandle, MPI_UNSIGNED_CHAR, ori_result_PicMatrix, 1, vector2, 0, MPI_COMM_WORLD);
     /*
     if (my_rank == 0)
     {
@@ -454,7 +451,7 @@ void h_rootPrintHelp(int my_rank)
         printf("                                       [2] Relief  \n");
         printf("                                       [3] Edge dec.  \n");
         printf("\n");
-        printf("*Parameter -w <number as Integer> :    Specifies the width of the given picture. Option is crucial");
+        printf("*Parameter -w <number as Integer> :    Specifies the weight of the given picture. Option is crucial");
         printf("*Parameter -r <number as Integer> :    Specifies how many times a given filter should be applied");
         printf("Example call:\n");
         printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
