@@ -131,6 +131,9 @@ int main(int argc, char *argv[])
     err = MPI_File_get_size(mpi_file, &fsize);
 
     picHeight = (fsize / (sizeof(unsigned char)) / picWidth);
+    int tempWidth= picHeight;
+    picHeight = picWidth;
+    picWidth=tempWidth;
     int elemsToHandleTOTAL = picHeight * picWidth;
     unsigned char *ori_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandleTOTAL);
     unsigned char *ori_result_PicMatrix = malloc(sizeof(unsigned char) * elemsToHandleTOTAL);
