@@ -1,13 +1,12 @@
 /***********************************************************************
- Program: my-mpi-jacobi.c
+ Program: t1Newass4i.c
  Author: Michael Czaja, Muttaki Aslanparcasi
  matriclenumber: 4293033, 5318807
  Assignment : 4
  Task: 1
 
  Description:
-MPI program that solves a set of linear equations Ax = b with the Jacobi method that
-converges if the distance between the vectors x^(k) and x^(k+1) is small enough. (Calc by Cols)
+MPI program that applies diffrent pic-filters on a given picture in the format gray.
 /************************************************************************/
 #include <stdio.h>
 #include "mpi.h"
@@ -165,25 +164,6 @@ int main(int argc, char *argv[])
             local_work_partOfOriPic[i + 2 * local_numberOfElmsPerRow] = local_partOfOriPicFromCom[i];
 
         // ------------------------------------------------------------[ Prepare for share ]--
-        /*
-    // Checks if every node has the right part of pic.
-    for (x = 0; x < world_size; x++)
-    {
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(2000);
-        if (my_rank == x)
-        {
-            printf("[%d] Printing my scatter part.\n", my_rank);
-            for (i = 0; i < local_work_numberElmsToHandle; i++)
-            {
-                if (i % local_numberOfElmsPerRow == 0)
-                    printf("\n");
-                printf("%3u ", local_work_partOfOriPic[i]);
-            }
-            printf("\n");
-        }
-    }
-    */
         int sizeOfSendReivBlocks = (picHeight + 4) * 2;
         unsigned char *packLeftBlockToSend = malloc(sizeof(unsigned char) * sizeOfSendReivBlocks);
         unsigned char *packRightBlockToSend = malloc(sizeof(unsigned char) * sizeOfSendReivBlocks);
@@ -262,46 +242,6 @@ int main(int argc, char *argv[])
         MPI_Wait(&ch2, &status);
         MPI_Wait(&ch3, &status);
         MPI_Wait(&ch4, &status);
-
-        /*
-    // prints the content of the send and reiv buffers.
-    for (x = 0; x < world_size; x++)
-    {
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(2000);
-        printf("\n[%d /%d]\n", my_rank, world_size);
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(2000);
-        if (my_rank == x)
-        {
-            printf("\n[%d]  lSend  |  rSend  | |  lReiv  |  rReiv  |\n", my_rank);
-            for (i = 0; i < sizeOfSendReivBlocks; i++)
-            {
-                if (i % 2 == 0)
-                    printf("\n");
-
-                printf("[%d] ", my_rank);
-                printf("%3u ", packLeftBlockToSend[i]);
-                printf("%3u ", packLeftBlockToSend[i + 1]);
-                printf("| ");
-                printf("%3u ", packRightBlockToSend[i]);
-                printf("%3u ", packRightBlockToSend[i + 1]);
-                printf("| ");
-                printf("| ");
-                printf("%3u ", packLeftBlockToRecv[i]);
-                printf("%3u ", packLeftBlockToRecv[i + 1]);
-                printf("| ");
-                printf("%3u ", packRightBlockToRecv[i]);
-                printf("%3u ", packRightBlockToRecv[i + 1]);
-                i++;
-            }
-            printf("\n[%d] +++++++++++++++++++++++++++++++++++++++++\n", my_rank);
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(2000);
-    }
-    */
-
         // ------------------------------------------------------------[ Calculate ]--
 
         double localSum = 0;
@@ -365,27 +305,6 @@ int main(int argc, char *argv[])
                 //     printf("\n---------- pos %d", posi);
                 local_result_partOfOriPicFromCom[(x + ((y - 2) * local_numberOfElmsPerRow))] = elmToSave;
             }
-
-            // Checks if every node has the right part of pic.
-            /*
-        for (int z = 0; z < world_size; z++)
-        {
-            MPI_Barrier(MPI_COMM_WORLD);
-            usleep(2000);
-            if (my_rank == z)
-            {
-                printf("[%d] Printing step 1.\n", my_rank);
-                for (int p = 0; p < local_numberElmsToHandle; p++)
-                {
-                    if (p % local_numberOfElmsPerRow == 0)
-                        printf("\n");
-                    printf("%3u ", local_result_partOfOriPicFromCom[p]);
-                }
-                printf("\n");
-            }
-        }
-      
-    */
         }
         // ------------------------------------------------------------[ RESULT ]--
         if (my_rank == 0)
@@ -395,21 +314,6 @@ int main(int argc, char *argv[])
             local_partOfOriPicFromCom[i] = local_result_partOfOriPicFromCom[i];
     }
     MPI_Gather(local_result_partOfOriPicFromCom, local_numberElmsToHandle, MPI_UNSIGNED_CHAR, ori_result_PicMatrix, 1, vector2, 0, MPI_COMM_WORLD);
-    /*
-    if (my_rank == 0)
-    {
-        printf("\nRESULT\n");
-        for (i = 0; i < elemsToHandleTOTAL; i++)
-        {
-            if (i % picWidth == 0)
-                printf("\n");
-            else
-            {
-                printf("%3u ", ori_result_PicMatrix[i]);
-            }
-        }
-    }
-    */
 
     // -------------------------------------------------------[ RESULT SAVE ]--
     // write and reload result.
@@ -427,7 +331,6 @@ int main(int argc, char *argv[])
         MPI_File_read(mpi_file, reload_PicMatrix, elemsToHandleTOTAL, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
         MPI_File_close(&mpi_file);
         printf("------------------------------------------[Result rel.]\n");
-        // printVectorcharNoBar('R', reload_PicMatrix, elemsToHandleTOTAL, picWidth, my_rank, 0);
     }
 
     printf("[node %d] ExEnd.\n", my_rank);
