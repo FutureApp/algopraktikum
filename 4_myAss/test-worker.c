@@ -77,19 +77,20 @@ int main(int argc, char *argv[])
         {
             MPI_Test(&request, &flags, &status);
         }
-
-        mutex();
-        printf("Dim %d ", matrixDim);
-        h_printParaQuaMatrixOfDouble('A', local_matrixA, matrixDim, me, matrixDim * matrixDim);
-        mutex();
-
         // FINAL Condition
         int finalStatus = 0;
         flags = 0;
         MPI_Ibcast(&finalStatus, 1, MPI_INT, 0, parent, &request);
+        int firstOne = 0;
         while (flags == 0)
+        {
+            if (firstOne == 0)
+            {
+                printf("[%d] My calc is finished. Waiting for master-com now\n", me);
+                firstOne++;
+            }
             MPI_Test(&request, &flags, &status);
-        printf("\nWorker rip %d %d", me, finalStatus);
+        }
     }
     MPI_Finalize();
     return 0;
