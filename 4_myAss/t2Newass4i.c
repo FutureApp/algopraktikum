@@ -18,6 +18,12 @@ converges if the distance between the vectors x^(k) and x^(k+1) is small enough.
 #include <ctype.h>
 #include <unistd.h>
 
+void mutex()
+{
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(400);
+}
+
 void h_rootPrintHelp(int my_rank);
 void h_setAndCheckParams(int argc, char *argv[]);
 
@@ -36,18 +42,30 @@ void h_printQuaMatrixOfDouble(char tag, double *matrix, int sizeOfMatrix, int ra
                 printf("\n");
             printf("(%3d)%3.3f ", i, matrix[i]);
         }
+        if (rank == 0)
+            printf("\n");
     }
 }
 
-void mutex()
+void h_printParaQuaMatrixOfDouble(char tag, double *matrix, int sizeOfMatrix, int rank, int maxNodes)
 {
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(1000);
+    if (rank == 1)
+        printf("\n%c", tag);
+    for (int i = 0; i < (sizeOfMatrix * sizeOfMatrix); i++)
+    {
+        mutex();
+        if (rank == i)
+        {
+            if (i % sizeOfMatrix == 0)
+                printf("\n");
+            printf("(%2d)%f ", i, matrix[0]);
+        }
+    }
 }
 
 int my_rank, world_size; //MPI-STUFF
-char *pathMatrixA;
-char *pathMatrixB;
+char *pathmaster_ori_matrixA;
+char *pathmaster_ori_matrixB;
 
 int err, i;
 int main(int argc, char *argv[])
@@ -63,9 +81,9 @@ int main(int argc, char *argv[])
     MPI_Offset fsizeB;
     int elemsToHandleA, elemsToHandleB;
 
-    err = MPI_File_open(MPI_COMM_SELF, pathMatrixA, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_fileA);
+    err = MPI_File_open(MPI_COMM_SELF, pathmaster_ori_matrixA, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_fileA);
     MPI_File_get_size(mpi_fileA, &fsizeA);
-    err = MPI_File_open(MPI_COMM_SELF, pathMatrixB, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_fileB);
+    err = MPI_File_open(MPI_COMM_SELF, pathmaster_ori_matrixB, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_fileB);
     MPI_File_get_size(mpi_fileB, &fsizeB);
 
     elemsToHandleA = fsizeA / (sizeof(double));
@@ -73,55 +91,143 @@ int main(int argc, char *argv[])
     if (my_rank == 0)
         printf("Elms per row <%d>\n", elemsToHandleA);
 
-    double *matrixA = malloc(sizeof(double) * elemsToHandleA);
-    double *matrixB = malloc(sizeof(double) * elemsToHandleB);
-    double *matrixC = malloc(sizeof(double) * elemsToHandleB);
+    double *master_ori_matrixA = malloc(sizeof(double) * elemsToHandleA);
+    double *master_ori_matrixB = malloc(sizeof(double) * elemsToHandleB);
+    double *master_ori_matrixC = malloc(sizeof(double) * elemsToHandleB);
 
     int matrixDim = (int)sqrt(elemsToHandleA);
-    MPI_File_read(mpi_fileA, matrixA, elemsToHandleA, MPI_DOUBLE, MPI_STATUS_IGNORE);
-    MPI_File_read(mpi_fileB, matrixB, elemsToHandleB, MPI_DOUBLE, MPI_STATUS_IGNORE);
+
+    MPI_File_read(mpi_fileA, master_ori_matrixA, elemsToHandleA, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    MPI_File_read(mpi_fileB, master_ori_matrixB, elemsToHandleB, MPI_DOUBLE, MPI_STATUS_IGNORE);
     MPI_File_close(&mpi_fileA);
     MPI_File_close(&mpi_fileB);
 
     mutex();
-    h_printQuaMatrixOfDouble('A', matrixA, matrixDim, my_rank, 1);
+    h_printQuaMatrixOfDouble('A', master_ori_matrixA, matrixDim, my_rank, 0);
     mutex();
 
     if (my_rank == 0)
         printf("Elms per row <%d>\n", matrixDim);
+
+    double *local_matrixA = malloc(sizeof(double) * 1);
+    double *local_matrixB = malloc(sizeof(double) * 1);
+    double *local_matrixC = malloc(sizeof(double) * 1);
+
+    MPI_Scatter(master_ori_matrixA, 1, MPI_DOUBLE, local_matrixA, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatter(master_ori_matrixB, 1, MPI_DOUBLE, local_matrixB, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    local_matrixC[0] = 0; // This is the init value.
+
+    MPI_Comm cartCom;
+    int nodesInCart;
+    int me;
+    int coords[2];
+    int per[2] = {1, 1};
+    int dims[2] = {4, 4};
+    MPI_Cart_create(MPI_COMM_WORLD, 2, dims,
+                    per, 1, &cartCom);
+
+    MPI_Comm_rank(cartCom, &me);
+    MPI_Cart_coords(cartCom, me, 2, coords);
+    MPI_Comm_size(cartCom, &nodesInCart);
+
+    /*for (i = 0; i < world_size; i++)
+    {
+        if (my_rank == i)
+            printf("[%d] (%d,%d)\n", my_rank, coords[0], coords[1]);
+        mutex();
+    }*/
+
+    /*for (i = 0; i < world_size; i++)
+    {
+        if (my_rank == i)
+            printf("[%d] des %d\n", my_rank, (coords[0]));
+        mutex();
+    }*/
+
+    //Control var.
+    int dir = 1;
+    int disp = -coords[0];
+    int rank_source, rank_dest;
+
+    // --------------------------------------------[ Alignment R&C ]--
+    // Shifts rows left till boarder
+    MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
+    MPI_Sendrecv_replace(local_matrixA, 1, MPI_DOUBLE, rank_dest, 0,
+                         rank_source, 0, cartCom, MPI_STATUS_IGNORE);
+
+    // Shifts cols top till boarder
+    dir = 0;
+    disp = -coords[1];
+    MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
+    MPI_Sendrecv_replace(local_matrixB, 1, MPI_DOUBLE, rank_dest, 0,
+                         rank_source, 0, cartCom, MPI_STATUS_IGNORE);
+    /**/
+    // Makes calcs and shifts elems
+    int roundsToShift = sqrt(nodesInCart);
+    disp = -1;
+    if (my_rank == 1)
+        printf("Ready to play\n");
+    mutex();
+    for (i = 0; i < roundsToShift; i++)
+    {
+        double c_before = local_matrixC[0];
+        local_matrixC[0] = local_matrixC[0] + local_matrixA[0] * local_matrixB[0];
+        dir = 1;
+        if (me == 0)
+            printf("[%d-%d] calc: %f = %f + %f * %f\n", me, i, local_matrixC[0], c_before, local_matrixA[0], local_matrixB[0]);
+        MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
+        MPI_Sendrecv_replace(local_matrixA, 1, MPI_DOUBLE, rank_dest, 0,
+                             rank_source, 0, cartCom, MPI_STATUS_IGNORE);
+        dir = 0;
+        MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
+        MPI_Sendrecv_replace(local_matrixB, 1, MPI_DOUBLE, rank_dest, 0,
+                             rank_source, 0, cartCom, MPI_STATUS_IGNORE);
+
+        mutex();
+    }
+
+    if (my_rank == 0)
+        printf("A B C\n");
+    mutex();
+    for (i = 0; i < world_size; i++)
+    {
+        mutex();
+        if (my_rank == i)
+        {
+            printf("[%d] %f %f %f\n", my_rank, local_matrixA[0], local_matrixB[0], local_matrixC[0]);
+        }
+    }
+
     // -------------------------------------------------------[ CODE ]--
 
-    // -------------------------------------------------------[ CODE ]--
-
-    //###############
-    // root reads 2 paths  (A&B matrix) ------------------------------------X
-    // root listen to start and quit.
-    //###############
-
-    //###############
-    // Calculate number of nodes and starts the slaves
-    //###############
-
-    //###############
-    // Init infrastructure and distribute the values
-    // MPI_Cart_create()
-    // Each process gets m^2 values where m = n/ srt(p)
-    // MPI_Sendrecv_replace and MPI_Card_shift - HOW communication works.
-    //###############
-
-    //###############
-    // All workers writing their values to file
-    // Processing stops if masters get quit()
-    // Listening if everything is done works by test!
-    //###############
-    // -------------------------------------------------------[ RESULT SAVE ]--
-    seq_MatrixMulti(matrixA, matrixB, matrixC, matrixDim);
+    // ---------------------------------------------[ SHOW FIN MATRIX ]--
 
     mutex();
-    printf("\n");
+    h_printParaQuaMatrixOfDouble('A', local_matrixA, matrixDim, me, matrixDim * matrixDim);
+    h_printParaQuaMatrixOfDouble('B', local_matrixB, matrixDim, me, matrixDim * matrixDim);
+    h_printParaQuaMatrixOfDouble('C', local_matrixC, matrixDim, me, matrixDim * matrixDim);
     mutex();
-    //h_printQuaMatrixOfDouble('R', matrixC, matrixDim, my_rank, 0);
+
+    // -------------------------------------------------------[ SAVE RESULT ]--
+    MPI_File mpi_file;
+    char *pathToResultFile = "./c-result.double"; //PATH where to save result
+
+    err = MPI_File_open(cartCom, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
+    if (err)
+        printf("\nError opening the file.\n");
+    MPI_File_write_ordered(mpi_file, local_matrixC, 1, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    MPI_File_close(&mpi_file);
     mutex();
+    if (me == 1)
+        printf("\nResult saved. Check < %s >.\n", pathToResultFile);
+    mutex();
+    MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
+    MPI_File_read(mpi_file, master_ori_matrixC, elemsToHandleB, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    MPI_File_close(&mpi_file);
+
+    printf("%d ", elemsToHandleB);
+    mutex();
+    h_printQuaMatrixOfDouble('R', master_ori_matrixC, sqrt(elemsToHandleB), me, 1);
     MPI_Finalize(); // finalizing MPI interface
 }
 
@@ -165,11 +271,11 @@ void h_setAndCheckParams(int argc, char *argv[])
             exit(0);
             break;
         case 'a':
-            pathMatrixA = optarg;
+            pathmaster_ori_matrixA = optarg;
             man_a = 0;
             break;
         case 'b':
-            pathMatrixB = optarg;
+            pathmaster_ori_matrixB = optarg;
             man_b = 0;
             break;
         case '?':
@@ -296,33 +402,33 @@ Writes ma
         int times4 = 4 * 4;
         int times8 = 8 * 8;
 
-        double *matrixA4 = malloc(sizeof(double) * times4);
-        double *matrixA8 = malloc(sizeof(double) * times8);
-        double *matrixC4 = malloc(sizeof(double) * times4);
-        double *matrixC8 = malloc(sizeof(double) * times8);
+        double *master_ori_matrixA4 = malloc(sizeof(double) * times4);
+        double *master_ori_matrixA8 = malloc(sizeof(double) * times8);
+        double *master_ori_matrixC4 = malloc(sizeof(double) * times4);
+        double *master_ori_matrixC8 = malloc(sizeof(double) * times8);
         for (i = 0; i < times4; i++)
-            matrixA4[i] = i % 4;
+            master_ori_matrixA4[i] = i % 4;
         for (i = 0; i < times8; i++)
-            matrixA8[i] = i % 8;
+            master_ori_matrixA8[i] = i % 8;
 
         for (i = 0; i < times4; i++)
         {
             if (i % 4 == 0)
                 printf("\n");
-            printf("%f ", matrixA4[i]);
+            printf("%f ", master_ori_matrixA4[i]);
         }
 
         char *pathToResultFile = "./a4x4"; //PATH where to save result
         err = MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
         if (err)
             printf("Error opening the file. \n");
-        MPI_File_write(mpi_file, matrixA4, times4, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        MPI_File_write(mpi_file, master_ori_matrixA4, times4, MPI_DOUBLE, MPI_STATUS_IGNORE);
         MPI_File_close(&mpi_file);
         pathToResultFile = "./a8x8"; //PATH where to save result
         err = MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
         if (err)
             printf("Error opening the file. \n");
-        MPI_File_write(mpi_file, matrixA8, times8, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        MPI_File_write(mpi_file, master_ori_matrixA8, times8, MPI_DOUBLE, MPI_STATUS_IGNORE);
         MPI_File_close(&mpi_file);
         printf("EASY\n");
 
