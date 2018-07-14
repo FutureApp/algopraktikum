@@ -18,6 +18,13 @@ converges if the distance between the vectors x^(k) and x^(k+1) is small enough.
 #include <ctype.h>
 #include <unistd.h>
 
+int my_rank, world_size; //MPI-STUFF
+char *pathmaster_ori_matrixA;
+char *pathmaster_ori_matrixB;
+char *pathmaster_ori_matrixC;
+
+int err, i;
+
 void mutex()
 {
     MPI_Barrier(MPI_COMM_WORLD);
@@ -63,11 +70,6 @@ void h_printParaQuaMatrixOfDouble(char tag, double *matrix, int sizeOfMatrix, in
     }
 }
 
-int my_rank, world_size; //MPI-STUFF
-char *pathmaster_ori_matrixA;
-char *pathmaster_ori_matrixB;
-
-int err, i;
 int main(int argc, char *argv[])
 {
     MPI_Init(&argc, &argv);                  // initializing of MPI-Interface
@@ -210,7 +212,7 @@ int main(int argc, char *argv[])
 
     // -------------------------------------------------------[ SAVE RESULT ]--
     MPI_File mpi_file;
-    char *pathToResultFile = "./c-result.double"; //PATH where to save result
+    char *pathToResultFile = pathmaster_ori_matrixC; //PATH where to save result
 
     err = MPI_File_open(cartCom, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
     if (err)
@@ -261,9 +263,10 @@ void h_setAndCheckParams(int argc, char *argv[])
     int c;
     int man_a = -1;
     int man_b = -1;
+    int man_c = -1;
 
     opterr = 0;
-    while ((c = getopt(argc, argv, "ha:b:")) != -1)
+    while ((c = getopt(argc, argv, "ha:b:c:")) != -1)
         switch (c)
         {
         case 'h':
@@ -277,6 +280,10 @@ void h_setAndCheckParams(int argc, char *argv[])
         case 'b':
             pathmaster_ori_matrixB = optarg;
             man_b = 0;
+            break;
+        case 'c':
+            pathmaster_ori_matrixC = optarg;
+            man_c = 0;
             break;
         case '?':
             if (my_rank == 0)
@@ -298,7 +305,7 @@ void h_setAndCheckParams(int argc, char *argv[])
             printf("Error. Can't process input.\n");
             abort();
         }
-    int res = man_a + man_b;
+    int res = man_a + man_b + man_c;
     if (res != 0)
     {
         if (my_rank == 0)
