@@ -86,9 +86,8 @@ int main(int argc, char *argv[])
         local_matrixC[0] = 0; // This is the init value.
         flags = 0;
         while (flags == 0)
-        {
             MPI_Test(&request, &flags, &status);
-        }
+        
         // CALC
         //####################################################################################
         MPI_Comm cartCom;
