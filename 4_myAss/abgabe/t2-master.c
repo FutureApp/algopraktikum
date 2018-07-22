@@ -264,7 +264,7 @@ int main(int argc, char *argv[])
         MPI_Comm child;
         int spawnError[sizeOfChilds];
 
-        printf("MASTER spawing all childs.\n");
+        printf("MASTER spawing all childs (%d).\n", sizeOfChilds);
         MPI_Comm_spawn(program, MPI_ARGV_NULL, sizeOfChilds, MPI_INFO_NULL, 0, MPI_COMM_SELF, &child, spawnError);
 
         int myid, flags = 0;
@@ -299,13 +299,15 @@ int main(int argc, char *argv[])
         //FINAL Condition
         MPI_Request finalRequest;
         int finalStatus = 18;
-        MPI_Ibcast(&finalStatus, 1, MPI_INT, MPI_ROOT, child, &finalRequest);
+        printf("Waiting for childs to terminate.\n");
+        MPI_Barrier(child);
+        printf("All childs terminated\n");
         flags = 0;
-        while (flags == 0)
+        /*while (flags == 0)
         {
             printf("*MASTER* Waiting for childs to terminate.\n");
             MPI_Test(&finalRequest, &flags, &status);
-        }
+        }*/
 
         // -------------------------------------------------------[ RESULT SAVE ]--
         // write and reload result.
@@ -327,7 +329,7 @@ int main(int argc, char *argv[])
         for (i = 0; i < elemsToHandleTOTAL; i++)
         {
             if (i % perLine == 0)
-                printf("\n");
+                printf("|\n");
             printf("%f ", reload_resMatrix[i]);
         }
 

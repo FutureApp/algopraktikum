@@ -140,30 +140,31 @@ int main(int argc, char *argv[])
                                  rank_source, 0, cartCom, MPI_STATUS_IGNORE);
         }
         // -------------------------------------------------------[ SAVE RESULT ]--
-        char *pathToResultFile = "./result.double"; //PATH where to save result
-        err = MPI_File_open(cartCom, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
-        if (err)
-            printf("\nError opening the file.\n");
-        MPI_File_write_ordered(mpi_file, local_matrixC, 1, MPI_DOUBLE, MPI_STATUS_IGNORE);
-        MPI_File_close(&mpi_file);
-        //####################################################################################
-        // FINAL Condition
-        int finalStatus = 0;
-        flags = 0;
-        MPI_Ibcast(&finalStatus, 1, MPI_INT, 0, parent, &request);
-        int firstOne = 0;
-        while (flags == 0)
+        double *c_matrix = malloc(sizeof(double) * world_size);
+        printf("+");
+        MPI_Gather(
+            local_matrixC,
+            1,
+            MPI_DOUBLE,
+            c_matrix,
+            1,
+            MPI_DOUBLE,
+            0,
+            MPI_COMM_WORLD);
+        if (me == 0)
         {
-            if (firstOne == 0)
-            {
-                //printf("[%d] My calc is finished. Waiting for master-com now\n", me);
-                firstOne++;
-            }
-            MPI_Test(&request, &flags, &status);
+            printf("Writing\n");
+            char *pathToResultFile = "./result.double"; //PATH where to save result
+            err = MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
+            if (err)
+                printf("\nError opening the file.\n");
+            MPI_File_write(mpi_file, c_matrix, world_size, MPI_DOUBLE, MPI_STATUS_IGNORE);
+            MPI_File_close(&mpi_file);
         }
+        MPI_Barrier(cartCom);
+        //####################################################################################
+        MPI_Barrier(parent);
     }
-
-    //./result.double
     MPI_Finalize();
     return 0;
 }
