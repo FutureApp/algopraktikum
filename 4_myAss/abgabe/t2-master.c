@@ -172,7 +172,6 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //get your rank
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-
     fd_set s_rd, s_wr, s_ex;
     int tmp_bool = 1;
     char tmp_charUserInput, com;
@@ -257,9 +256,7 @@ int main(int argc, char *argv[])
         MPI_File_close(&mpi_fileA);
         MPI_File_close(&mpi_fileB);
 
-        mutex();
         h_printQuaMatrixOfDouble('A', master_ori_matrixA, matrixDim, my_rank, 0);
-        mutex();
 
         // Child section
         int sizeOfChilds = elemsToHandleA;
@@ -267,6 +264,7 @@ int main(int argc, char *argv[])
         MPI_Comm child;
         int spawnError[sizeOfChilds];
 
+        printf("MASTER spawing all childs.\n");
         MPI_Comm_spawn(program, MPI_ARGV_NULL, sizeOfChilds, MPI_INFO_NULL, 0, MPI_COMM_SELF, &child, spawnError);
 
         int myid, flags = 0;
@@ -274,24 +272,15 @@ int main(int argc, char *argv[])
         MPI_Status status;
         MPI_Comm_rank(MPI_COMM_WORLD, &myid);
 
+        printf("MASTER Distributing the matrices.\n");
         double *local_matrixA[1], *local_matrixB[1];
         MPI_Ibcast(&matrixDim, 1, MPI_INT, MPI_ROOT, child, &request);
-
         MPI_Iscatter(master_ori_matrixA, 1, MPI_DOUBLE, local_matrixA, 1, MPI_DOUBLE, MPI_ROOT, child, &request);
         MPI_Iscatter(master_ori_matrixB, 1, MPI_DOUBLE, local_matrixB, 1, MPI_DOUBLE, MPI_ROOT, child, &request);
 
-        flags = 0;
-        while (flags == 0)
-            MPI_Test(&request, &flags, &status);
-
-        //FINAL Condition
-
+        printf("MASTER Calc is now running. To quit the execution enter <q>.\n>>> ");
         char comQuit[64] = "";
         char *ptrQ;
-
-        // ask for A
-        printf("MASTER Calc is now running. To quit the execution enter <q>.\n");
-        select(fileno(stdin) + 1, &s_rd, NULL, NULL, NULL);
         sysInstruc = 0;
         while (sysInstruc == 0)
             while ((tmp_charUserInput = getchar()) != '\n' && tmp_charUserInput != EOF)
@@ -303,10 +292,11 @@ int main(int argc, char *argv[])
                 else
                 {
                     printf("*MASTER* What? Instruction <%c> is unkown. Try again.\n", tmp_charUserInput);
-                    printf("*MASTER* Calc is now running. To quit the execution enter <q>.\n");
+                    printf("*MASTER* Calc is now running. To quit the execution enter <q>.\n>>> ");
                 }
             }
 
+        //FINAL Condition
         MPI_Request finalRequest;
         int finalStatus = 18;
         MPI_Ibcast(&finalStatus, 1, MPI_INT, MPI_ROOT, child, &finalRequest);
@@ -316,8 +306,33 @@ int main(int argc, char *argv[])
             printf("*MASTER* Waiting for childs to terminate.\n");
             MPI_Test(&finalRequest, &flags, &status);
         }
+
+        // -------------------------------------------------------[ RESULT SAVE ]--
+        // write and reload result.
+        char *pathToResultFile = "./result.double"; //PATH where to save result
+        MPI_File mpi_file;
+        MPI_Offset fsize;
+        MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
+        MPI_File_get_size(mpi_file, &fsize);
+        int elemsToHandleTOTAL = fsize / sizeof(double);
+        double *reload_resMatrix = malloc(sizeof(double) * elemsToHandleTOTAL);
+        MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
+        MPI_File_read(mpi_file, reload_resMatrix, elemsToHandleTOTAL, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        MPI_File_close(&mpi_file);
+
+        int perLine = sqrt(elemsToHandleTOTAL);
+
+        printf("------------------------------------------[Result rel.]\n");
+        printf("RESULT MATRIX: Elms per line %d\n", perLine);
+        for (i = 0; i < elemsToHandleTOTAL; i++)
+        {
+            if (i % perLine == 0)
+                printf("\n");
+            printf("%f ", reload_resMatrix[i]);
+        }
+
         MPI_Finalize();
-        printf("\n**** Thanks for the awesome time with you guys! ****\nExecution will stop now. The result is located here: ./result.double\n");
+        printf("\n\n**** Thanks for the awesome time with you guys! ****\nExecution will stop now. The result is located here: ./result.double\n");
     }
     // 'e' detected. Stopping execution now.
     else
@@ -325,6 +340,5 @@ int main(int argc, char *argv[])
         printf("aborting the execution now....\n");
         abort();
     }
-
     return 0;
 }
