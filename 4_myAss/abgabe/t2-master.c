@@ -242,8 +242,6 @@ int main(int argc, char *argv[])
 
         elemsToHandleA = fsizeA / (sizeof(double));
         elemsToHandleB = fsizeB / (sizeof(double));
-        if (my_rank == 0)
-            printf("Elms per row <%d>\n", elemsToHandleA);
 
         double *master_ori_matrixA = malloc(sizeof(double) * elemsToHandleA);
         double *master_ori_matrixB = malloc(sizeof(double) * elemsToHandleB);
@@ -256,19 +254,17 @@ int main(int argc, char *argv[])
         MPI_File_close(&mpi_fileA);
         MPI_File_close(&mpi_fileB);
 
-        h_printQuaMatrixOfDouble('A', master_ori_matrixA, matrixDim, my_rank, 0);
-
         // Child section
         int sizeOfChilds = elemsToHandleA;
         char *program = "./t2-worker-prog";
         MPI_Comm child;
         int spawnError[sizeOfChilds];
 
-        printf("MASTER spawing all childs (%d).\n", sizeOfChilds);
+        printf("MASTER spawing childs.\n", sizeOfChilds);
         MPI_Comm_spawn(program, MPI_ARGV_NULL, sizeOfChilds, MPI_INFO_NULL, 0, MPI_COMM_SELF, &child, spawnError);
 
         int myid, flags = 0;
-        MPI_Request request;
+        MPI_Request request, requestf;
         MPI_Status status;
         MPI_Comm_rank(MPI_COMM_WORLD, &myid);
 
@@ -276,12 +272,16 @@ int main(int argc, char *argv[])
         double *local_matrixA[1], *local_matrixB[1];
         MPI_Ibcast(&matrixDim, 1, MPI_INT, MPI_ROOT, child, &request);
         MPI_Iscatter(master_ori_matrixA, 1, MPI_DOUBLE, local_matrixA, 1, MPI_DOUBLE, MPI_ROOT, child, &request);
-        MPI_Iscatter(master_ori_matrixB, 1, MPI_DOUBLE, local_matrixB, 1, MPI_DOUBLE, MPI_ROOT, child, &request);
+        MPI_Iscatter(master_ori_matrixB, 1, MPI_DOUBLE, local_matrixB, 1, MPI_DOUBLE, MPI_ROOT, child, &requestf);
 
-        printf("MASTER Calc is now running. To quit the execution enter <q>.\n>>> ");
+        flags = 0;
+        sysInstruc = 0;
         char comQuit[64] = "";
         char *ptrQ;
-        sysInstruc = 0;
+        printf("MASTER Calc is now running. To quit the execution enter <q>.\n>>> ");
+        while (flags == 0)
+            MPI_Test(&requestf, &flags, &status);
+        
         while (sysInstruc == 0)
             while ((tmp_charUserInput = getchar()) != '\n' && tmp_charUserInput != EOF)
             {
@@ -334,7 +334,7 @@ int main(int argc, char *argv[])
         }
 
         MPI_Finalize();
-        printf("\n\n**** Thanks for the awesome time with you guys! ****\nExecution will stop now. The result is located here: ./result.double\n");
+        printf("\n\n**** Thanks for the awesome time and all the help from you! ****\nExecution will stop now. The result is located here: ./result.double\n");
     }
     // 'e' detected. Stopping execution now.
     else

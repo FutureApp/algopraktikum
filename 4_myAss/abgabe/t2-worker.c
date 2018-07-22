@@ -87,7 +87,6 @@ int main(int argc, char *argv[])
         flags = 0;
         while (flags == 0)
             MPI_Test(&request, &flags, &status);
-        
         // CALC
         //####################################################################################
         MPI_Comm cartCom;
@@ -140,7 +139,6 @@ int main(int argc, char *argv[])
         }
         // -------------------------------------------------------[ SAVE RESULT ]--
         double *c_matrix = malloc(sizeof(double) * world_size);
-        printf("+");
         MPI_Gather(
             local_matrixC,
             1,
@@ -152,7 +150,6 @@ int main(int argc, char *argv[])
             MPI_COMM_WORLD);
         if (me == 0)
         {
-            printf("Writing\n");
             char *pathToResultFile = "./result.double"; //PATH where to save result
             err = MPI_File_open(MPI_COMM_SELF, pathToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
             if (err)
