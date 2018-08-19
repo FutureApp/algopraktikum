@@ -22,8 +22,8 @@ This is the manager-component.
 #include <string.h>
 
 int my_rank, world_size; //MPI-STUFF
-char *pathmaster_ori_matrixA;
-char *pathmaster_ori_matrixB;
+char *pathmaster_1d_matrixA;
+char *pathmaster_1d_matrixB;
 char *pathmaster_ori_matrixC;
 
 int err, i;
@@ -100,11 +100,11 @@ void h_setAndCheckParams(int argc, char *argv[])
             exit(0);
             break;
         case 'a':
-            pathmaster_ori_matrixA = optarg;
+            pathmaster_1d_matrixA = optarg;
             man_a = 0;
             break;
         case 'b':
-            pathmaster_ori_matrixB = optarg;
+            pathmaster_1d_matrixB = optarg;
             man_b = 0;
             break;
         case 'c':
@@ -168,6 +168,7 @@ void error(char *mes) { printf("%s", mes); }
 
 int main(int argc, char *argv[])
 {
+    int printer = 0, flags = 0;
     MPI_Init(&argc, &argv);                  // initializing of MPI-Interface
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //get your rank
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -215,17 +216,26 @@ int main(int argc, char *argv[])
 
         printf("starting....\n");
 
-        // ask for A
-        printf("Enter path to matrix A:\n");
-        select(fileno(stdin) + 1, &s_rd, NULL, NULL, NULL);
-        fgets(pathToA, 64, stdin);
-        ptrA = strtok(pathToA, "\n");
+        if (0)
+        {
+            // ask for A
+            printf("Enter path to matrix A:\n");
+            select(fileno(stdin) + 1, &s_rd, NULL, NULL, NULL);
+            fgets(pathToA, 64, stdin);
+            ptrA = strtok(pathToA, "\n");
 
-        //ask for B
-        printf("Enter path to matrix B:\n");
-        select(fileno(stdin) + 1, &s_rd, NULL, NULL, NULL);
-        fgets(pathToB, 64, stdin);
-        ptrB = strtok(pathToB, "\n");
+            //ask for B
+            printf("Enter path to matrix B:\n");
+            select(fileno(stdin) + 1, &s_rd, NULL, NULL, NULL);
+            fgets(pathToB, 64, stdin);
+            ptrB = strtok(pathToB, "\n");
+        }
+        else
+        {
+            ptrA = "./a";
+            ptrB = "./b";
+        }
+
         printf("Path to matrix A: %s\n", ptrA);
         printf("Path to matrix B: %s\n", ptrB);
 
@@ -243,45 +253,91 @@ int main(int argc, char *argv[])
         elemsToHandleA = fsizeA / (sizeof(double));
         elemsToHandleB = fsizeB / (sizeof(double));
 
-        double *master_ori_matrixA = malloc(sizeof(double) * elemsToHandleA);
-        double *master_ori_matrixB = malloc(sizeof(double) * elemsToHandleB);
+        double *master_1d_matrixA = malloc(sizeof(double) * elemsToHandleA);
+        double *master_1d_matrixB = malloc(sizeof(double) * elemsToHandleB);
         double *master_ori_matrixC = malloc(sizeof(double) * elemsToHandleB);
 
         int matrixDim = (int)sqrt(elemsToHandleA);
 
-        MPI_File_read(mpi_fileA, master_ori_matrixA, elemsToHandleA, MPI_DOUBLE, MPI_STATUS_IGNORE);
-        MPI_File_read(mpi_fileB, master_ori_matrixB, elemsToHandleB, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        MPI_File_read(mpi_fileA, master_1d_matrixA, elemsToHandleA, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        MPI_File_read(mpi_fileB, master_1d_matrixB, elemsToHandleB, MPI_DOUBLE, MPI_STATUS_IGNORE);
         MPI_File_close(&mpi_fileA);
         MPI_File_close(&mpi_fileB);
 
-        // Child section
-        int sizeOfChilds = elemsToHandleA;
+        // print the two metrices
+        printf("A\n");
+        for (i = 0; i < matrixDim * matrixDim; i++)
+        {
+            if (i % matrixDim == 0)
+                printf("\n");
+            printf("%.3f ", master_1d_matrixA[i]);
+        }
+        printf("\nB\n");
+        for (i = 0; i < matrixDim * matrixDim; i++)
+        {
+            if (i % matrixDim == 0)
+                printf("\n");
+            printf("%.3f ", master_1d_matrixA[i]);
+        }
+        // Write 1-d matrices to 2-d matrices
+        int x, y, elmMatCounter = 0;
+        double master_2d_matrixA[matrixDim][matrixDim], master_2d_matrixB[matrixDim][matrixDim];
+        for (y = 0; y < matrixDim; y++)
+            for (x = 0; x < matrixDim; x++)
+            {
+                master_2d_matrixA[x][y] = master_1d_matrixA[elmMatCounter];
+                master_2d_matrixB[x][y] = master_1d_matrixB[elmMatCounter];
+                elmMatCounter++;
+            }
+
+        if (my_rank == printer)
+        {
+            printf("\n");
+            printf("\n");
+            printf("(%.3f) ", master_2d_matrixA[3][0]);
+            printf("\n");
+        }
+
+        // Create childs
+        int numberOfChilds = sqrt(elemsToHandleA);
         char *program = "./t2-worker-prog";
         MPI_Comm child;
-        int spawnError[sizeOfChilds];
+        int spawnError[numberOfChilds];
 
-        printf("MASTER spawing childs.\n", sizeOfChilds);
-        MPI_Comm_spawn(program, MPI_ARGV_NULL, sizeOfChilds, MPI_INFO_NULL, 0, MPI_COMM_SELF, &child, spawnError);
+        printf("MASTER spawing childs (%d).\n", numberOfChilds);
+        MPI_Comm_spawn(program, MPI_ARGV_NULL, numberOfChilds, MPI_INFO_NULL, 0, MPI_COMM_WORLD, &child, spawnError);
+        // Send info to childs
+        MPI_Bcast(&matrixDim, 1, MPI_INT, MPI_ROOT, child);
 
-        int myid, flags = 0;
-        MPI_Request request, requestf;
-        MPI_Status status;
-        MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+        // Create subarray-types
+        MPI_Datatype sub_array_type, sub_array_resized;
 
-        printf("MASTER Distributing the matrices.\n");
-        double *local_matrixA[1], *local_matrixB[1];
-        MPI_Ibcast(&matrixDim, 1, MPI_INT, MPI_ROOT, child, &request);
-        MPI_Iscatter(master_ori_matrixA, 1, MPI_DOUBLE, local_matrixA, 1, MPI_DOUBLE, MPI_ROOT, child, &request);
-        MPI_Iscatter(master_ori_matrixB, 1, MPI_DOUBLE, local_matrixB, 1, MPI_DOUBLE, MPI_ROOT, child, &requestf);
+        int num_procs = numberOfChilds;
+        int sub_matrix_size = sqrt(numberOfChilds);
+        int complete_array_dims[2] = {num_procs, num_procs};
+        int sub_array_dims[2] = {sub_matrix_size, sub_matrix_size};
+        int start_array[2] = {0, 0};
+        MPI_Type_create_subarray(2, complete_array_dims, sub_array_dims, start_array, MPI_ORDER_FORTRAN, MPI_DOUBLE, &sub_array_type);
+        MPI_Type_commit(&sub_array_type);
 
+        MPI_Type_create_resized(sub_array_type, 0, sub_matrix_size * sizeof(double), &sub_array_resized);
+        MPI_Type_commit(&sub_array_resized);
+
+        //TODO SCATTERV
+
+        MPI_Barrier(child);
+        printf("Master off\n");
+        exit(1);
+
+        // Wait till user-exit.
         flags = 0;
         sysInstruc = 0;
         char comQuit[64] = "";
         char *ptrQ;
         printf("MASTER Calc is now running. To quit the execution enter <q>.\n>>> ");
-        while (flags == 0)
+        /*while (flags == 0)
             MPI_Test(&requestf, &flags, &status);
-        
+        */
         while (sysInstruc == 0)
             while ((tmp_charUserInput = getchar()) != '\n' && tmp_charUserInput != EOF)
             {
