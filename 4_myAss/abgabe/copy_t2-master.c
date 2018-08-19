@@ -168,12 +168,7 @@ void error(char *mes) { printf("%s", mes); }
 
 int main(int argc, char *argv[])
 {
-
-    char pathToA[64] = "", pathToB[64] = "", pathToC[64] = "";
-    char *ptrA, *ptrB;
-    int printer = 0, flags = 0, elmMatCounter = 0;
-    int i, x, y;
-
+    int printer = 0, flags = 0;
     MPI_Init(&argc, &argv);                  // initializing of MPI-Interface
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); //get your rank
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -216,6 +211,8 @@ int main(int argc, char *argv[])
     // 's' detected. Starting execution now.
     else if (sysInstruc == 1)
     {
+        char pathToA[64] = "", pathToB[64] = "", pathToC[64] = "";
+        char *ptrA, *ptrB;
 
         printf("starting....\n");
 
@@ -282,8 +279,18 @@ int main(int argc, char *argv[])
                 printf("\n");
             printf("%.3f ", master_1d_matrixA[i]);
         }
-        // Write 1-d matrices to 2-d matrices
 
+        // Child section
+        int numberOfChilds = sqrt(elemsToHandleA);
+        char *program = "./t2-worker-prog";
+        MPI_Comm child;
+        int spawnError[numberOfChilds];
+
+        printf("MASTER spawing childs (%d).\n", numberOfChilds);
+        //MPI_Comm_spawn(program, MPI_ARGV_NULL, numberOfChilds, MPI_INFO_NULL, 0, MPI_COMM_SELF, &child, spawnError);
+
+        // Write 1-d matrices to 2-d matrices
+        int x, y, elmMatCounter = 0;
         double master_2d_matrixA[matrixDim][matrixDim], master_2d_matrixB[matrixDim][matrixDim];
         for (y = 0; y < matrixDim; y++)
             for (x = 0; x < matrixDim; x++)
@@ -301,70 +308,23 @@ int main(int argc, char *argv[])
             printf("\n");
         }
 
-        // Create childs
-        int numberOfChilds = sqrt(elemsToHandleA);
-        char *program = "./t2-worker-prog";
-        MPI_Comm child;
-        int spawnError[numberOfChilds];
-
-        printf("MASTER spawing childs (%d).\n", numberOfChilds);
-        MPI_Comm_spawn(program, MPI_ARGV_NULL, numberOfChilds, MPI_INFO_NULL, 0, MPI_COMM_WORLD, &child, spawnError);
-        // Send info to childs
-        MPI_Bcast(&matrixDim, 1, MPI_INT, MPI_ROOT, child);
-
+        exit(1);
         // Create subarray-types
+        int size_sub_matrix = numberOfChilds * numberOfChilds;
+        int original_array_dims[2] = {numberOfChilds, numberOfChilds};
+        int sub_array_dims[2] = {size_sub_matrix, size_sub_matrix};
+        int startPos_2d[2] = {0, 0};
         MPI_Datatype sub_array_type, sub_array_resized;
-
-        int num_procs = numberOfChilds;
-        int sub_matrix_size = sqrt(numberOfChilds);
-        int complete_array_dims[2] = {num_procs, num_procs};
-        int sub_array_dims[2] = {sub_matrix_size, sub_matrix_size};
-        int start_array[2] = {0, 0};
-        MPI_Type_create_subarray(2, complete_array_dims, sub_array_dims, start_array, MPI_ORDER_FORTRAN, MPI_DOUBLE, &sub_array_type);
+        MPI_Type_create_subarray(2, original_array_dims, sub_array_dims, startPos_2d, MPI_ORDER_C, MPI_DOUBLE, &sub_array_type);
         MPI_Type_commit(&sub_array_type);
 
-        MPI_Type_create_resized(sub_array_type, 0, sub_matrix_size * sizeof(double), &sub_array_resized);
+        MPI_Type_create_resized(sub_array_type, 0, size_sub_matrix * sizeof(double), &sub_array_resized);
         MPI_Type_commit(&sub_array_resized);
 
-        // Create displacement array. Without these displacements Scatter works linewise and the subarrays overlap.
-        int sub_matrix_elements = 1;          // UNNEEDED
-        double recv_buf[sub_matrix_elements]; // UNNEEDED
-        int displs[num_procs];
-        int sends[num_procs];
-        int displ = -1;
+        // Send info to childs
+        
+        // Scatter matrices to childs.
 
-        //TODO RE-Imp displacement
-        for (y = 0; y < sub_matrix_size; y++)
-        {
-            for (x = 0; x < sub_matrix_size; x++)
-            {
-                
-
-            }
-        }
-
-        for (int i = 0; i < sub_matrix_size; ++i)
-        {
-            for (int j = 0; j < sub_matrix_size; ++j)
-            {
-                displ += 1;
-                displs[i * sub_matrix_size + j] = displ;
-            }
-            for (int j = 0; j < sub_matrix_size; ++j)
-            {
-                sends[i * sub_matrix_size + j] = 1;
-            }
-            displ += (sub_matrix_size - 1) * sub_matrix_size;
-        }
-
-        // Scatter matrix_A and matrix_B to child processes
-        //MPI_Scatterv(const void *sendbuf, const int *sendcounts, const int *displs, MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype, int root, MPI_Comm comm);
-        //MPI_Scatterv(master_2d_matrixA, sends, displs, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
-        MPI_Scatterv(master_2d_matrixA, sends, displs, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
-
-        MPI_Barrier(child);
-        printf("Master off\n");
-        exit(1);
 
         // Wait till user-exit.
         flags = 0;
