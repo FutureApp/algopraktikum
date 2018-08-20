@@ -47,6 +47,41 @@ void h_printParaQuaMatrixOfDouble(char tag, double *matrix, int sizeOfOriMatrix,
     }
 }
 
+/**
+ * @brief Multiples two matrices.
+ * 
+ * @param mat1 Matrix A
+ * @param mat2 Matrix B
+ * @param res  Matrix C -(result)
+ * @param block  Number of elems per row.
+ */
+void multiply1D(double *mat1, double *mat2, double *res, int block, int rank)
+{
+    int print = 0;
+    int i, j, k;
+    double temp_res = 0;
+    for (i = 0; i < block; i++)
+    {
+
+        for (j = 0; j < block; j++)
+        {
+            for (k = 0; k < block; k++)
+            {
+                temp_res = 0;
+                temp_res = res[j + i * block];
+                res[j + i * block] = temp_res + (mat1[k + i * block] * mat2[j + k * block]);
+                if (print == rank)
+                    printf("%d = %f + %d * %d\n", j + i * block, temp_res, k + i * block, j + k * block);
+                //printf("%f = %f + %f * %f\n", res[j + i * block], temp_res, mat1[k + i * block], mat2[j + k * block]);
+            }
+            if (print == rank)
+                printf("Pos %d = %f\n", j + i * block, res[j + i * block]);
+        }
+    }
+    if (print == rank)
+        printf("-----------------------------\n");
+}
+
 int main(int argc, char *argv[])
 {
     int world_size, i, x, y, matrixDim = -1, flags = 0, world_rank = -1;
@@ -68,7 +103,7 @@ int main(int argc, char *argv[])
     MPI_Comm_remote_size(parent, &size);
     if (size != 1)
         error("Something's wrong with the parent\n");
-    printf("[%d]WORKER on\n", world_rank);
+
     /* 
     * Parallel code here.  
     * The manager is represented as the process with rank 0 in (the remote 
@@ -80,58 +115,45 @@ int main(int argc, char *argv[])
 
     if (parent != MPI_COMM_NULL)
     {
-        int sizeOfOriMatrix = -1, sizeEachWtoHandle;
+        int sizeOfOriMatrix = -1, numberElmsOneDir;
+        // sizeOfOriMatrix = 16 given 16x16 matrix > 4 x 4 sub_matrix
         MPI_Bcast(&sizeOfOriMatrix, 1, MPI_INT, 0, parent);
-        sizeEachWtoHandle = sqrt(sizeOfOriMatrix);
-        printf("Father calls us %d", sizeOfOriMatrix);
+        numberElmsOneDir = sqrt(sizeOfOriMatrix);
 
-        double local_send_buffer_matrix[sizeEachWtoHandle];
+        double local_send_buffer_matrix[numberElmsOneDir];
         int local_send_count[world_size];
 
         for (i = 0; i < world_size; i++)
             local_send_count[i] = 0;
 
-        double local_2d_matrixA[sizeEachWtoHandle][sizeEachWtoHandle];
-        double local_2d_matrixB[sizeEachWtoHandle][sizeEachWtoHandle];
-        double local_2d_matrixC[sizeEachWtoHandle][sizeEachWtoHandle];
+        double local_2d_matrixA[numberElmsOneDir][numberElmsOneDir];
+        double local_2d_matrixB[numberElmsOneDir][numberElmsOneDir];
+        double local_2d_matrixC[numberElmsOneDir][numberElmsOneDir];
 
-        double local_1d_matrixA[sizeEachWtoHandle * sizeEachWtoHandle];
-        double local_1d_matrixB[sizeEachWtoHandle * sizeEachWtoHandle];
-        double local_1d_matrixC[sizeEachWtoHandle * sizeEachWtoHandle];
+        double local_1d_matrixA[numberElmsOneDir * numberElmsOneDir];
+        double local_1d_matrixB[numberElmsOneDir * numberElmsOneDir];
+        double local_1d_matrixC[numberElmsOneDir * numberElmsOneDir];
 
-        for (i = 0; i < sizeEachWtoHandle; i++)
+        // zeroe's all matrix entry's
+        for (i = 0; i < numberElmsOneDir; i++)
         {
-
-            for (x = 0; x < sizeEachWtoHandle; x++)
+            for (x = 0; x < numberElmsOneDir; x++)
             {
                 local_2d_matrixA[x][i] = 0;
                 local_2d_matrixB[x][i] = 0;
                 local_2d_matrixC[x][i] = 0;
+
+                local_1d_matrixA[i + x * numberElmsOneDir] = 0;
+                local_1d_matrixB[i + x * numberElmsOneDir] = 0;
+                local_1d_matrixC[i + x * numberElmsOneDir] = 0;
             }
         }
 
-        printf("[%d]WORKER off dim of matrix %d\n", world_rank, sizeEachWtoHandle);
-        printf("EXIT\n");
+        // Get parts of the ori matrix A and B.
+        MPI_Scatterv(local_send_buffer_matrix, local_send_count, local_send_count, MPI_DOUBLE, local_1d_matrixA, numberElmsOneDir * numberElmsOneDir, MPI_DOUBLE, 0, parent);
+        MPI_Scatterv(local_send_buffer_matrix, local_send_count, local_send_count, MPI_DOUBLE, local_1d_matrixB, numberElmsOneDir * numberElmsOneDir, MPI_DOUBLE, 0, parent);
 
-        // Receive matrix data
-        MPI_Scatterv(local_send_buffer_matrix, local_send_count, local_send_count, MPI_DOUBLE, local_1d_matrixA, sizeEachWtoHandle * sizeEachWtoHandle, MPI_DOUBLE, 0, parent);
-        printer = 1;
-        if (world_rank == printer)
-        {
-            printf("\nLocal A| ME(%d)\n", world_rank);
-            for (i = 0; i < sizeEachWtoHandle * sizeEachWtoHandle; i++)
-            {
-                if (i % sizeEachWtoHandle == 0)
-                    printf("\n");
-                printf("%.3f ", local_1d_matrixA[i]);
-            }
-            printf("\n-----------------\n");
-        }
-        MPI_Barrier(parent);
-        exit(1);
-        while (flags == 0)
-            MPI_Test(&request, &flags, &status);
-        // CALC
+        // Create the cart-communicator
         //####################################################################################
         MPI_Comm cartCom;
         int nodesInCart;
@@ -147,40 +169,94 @@ int main(int argc, char *argv[])
         MPI_Cart_coords(cartCom, me, 2, coords);
         MPI_Comm_size(cartCom, &nodesInCart);
 
-        //Control var.
-        int dir = 1;
-        int disp = -coords[0];
+        int moveLeftXTimes = me / dimSize, moveUpXTimes = me % dimSize;
+        int dir = 1, numberOfSendingElms = sizeOfOriMatrix;
+        int disp = moveLeftXTimes;
         int rank_source, rank_dest;
+
+        printf("        ME %d: left:%d up:%d\n", me, moveLeftXTimes, moveUpXTimes);
+        printer = 0;
+        if (me == printer)
+        {
+            printf("\nLocal C- Befors | ME-W(%d)\n", me);
+            for (i = 0; i < numberElmsOneDir * numberElmsOneDir; i++)
+            {
+                if (i % numberElmsOneDir == 0)
+                    printf("\n");
+                printf("%.3f ", local_1d_matrixC[i]);
+            }
+            printf("\n-----------------\n");
+        }
 
         // --------------------------------------------[ Alignment R&C ]--
         // Shifts rows left till boarder
+        if (me == printer)
+            printf("    Alignment Start\n");
         MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
-        MPI_Sendrecv_replace(local_2d_matrixA, 1, MPI_DOUBLE, rank_dest, 0,
+        MPI_Sendrecv_replace(local_1d_matrixA, numberOfSendingElms, MPI_DOUBLE, rank_dest, 0,
                              rank_source, 0, cartCom, MPI_STATUS_IGNORE);
 
         // Shifts cols top till boarder
         dir = 0;
-        disp = -coords[1];
+        disp = moveUpXTimes;
         MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
-        MPI_Sendrecv_replace(local_2d_matrixB, 1, MPI_DOUBLE, rank_dest, 0,
+        MPI_Sendrecv_replace(local_1d_matrixB, numberOfSendingElms, MPI_DOUBLE, rank_dest, 0,
                              rank_source, 0, cartCom, MPI_STATUS_IGNORE);
-        /**/
+        if (me == printer)
+            printf("    Alignment End\n");
+
+        // --------------------------------------------[ Calculate ]--
         // Makes calcs and shifts elems
-        int roundsToShift = sqrt(nodesInCart);
+        int roundsToShift = sqrt(nodesInCart)  ;
+        int k = 0, j = 0, block = numberElmsOneDir;
         disp = -1;
-        for (i = 0; i < roundsToShift; i++)
+        if (me == printer)
+            printf("    Calc start\n");
+        for (x = 0; x < roundsToShift; x++)
         {
-            double c_before = local_2d_matrixC[0][0];
-            local_2d_matrixC[0][0] = local_2d_matrixC[0][0] + local_2d_matrixA[0][0] * local_2d_matrixB[0][0];
+            if (me == printer)
+                printf("    Round %d/%d\n", x, roundsToShift);
+
+            for (i = 0; i < block; i++)
+            {
+                for (j = 0; j < block; j++)
+                {
+                    //local_1d_matrixC[j + i * block] = 0;
+                    for (k = 0; k < block; k++)
+                    {
+                        local_1d_matrixC[j + i * block] += local_1d_matrixA[k + i * block] * local_1d_matrixB[j + k * block];
+                    }
+                }
+            }
+
             dir = 1;
             MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
-            MPI_Sendrecv_replace(local_2d_matrixA, 1, MPI_DOUBLE, rank_dest, 0,
+            MPI_Sendrecv_replace(local_1d_matrixA, numberOfSendingElms, MPI_DOUBLE, rank_dest, 0,
                                  rank_source, 0, cartCom, MPI_STATUS_IGNORE);
             dir = 0;
             MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
-            MPI_Sendrecv_replace(local_2d_matrixB, 1, MPI_DOUBLE, rank_dest, 0,
+            MPI_Sendrecv_replace(local_1d_matrixB, numberOfSendingElms, MPI_DOUBLE, rank_dest, 0,
                                  rank_source, 0, cartCom, MPI_STATUS_IGNORE);
+            /*
+                                 */
         }
+
+        if (me == printer)
+        {
+            printf("\nLocal C- Befors | ME-W(%d)\n", me);
+            for (i = 0; i < numberElmsOneDir * numberElmsOneDir; i++)
+            {
+                if (i % numberElmsOneDir == 0)
+                    printf("\n");
+                printf("%.3f ", local_1d_matrixC[i]);
+            }
+            printf("\n-----------------\n");
+        }
+
+        if (me == printer)
+            printf("    Calc END\n");
+        MPI_Barrier(cartCom);
+        exit(1);
         // -------------------------------------------------------[ SAVE RESULT ]--
         double *c_matrix = malloc(sizeof(double) * world_size);
         MPI_Gather(

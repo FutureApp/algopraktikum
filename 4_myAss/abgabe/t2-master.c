@@ -17,6 +17,7 @@ This is the manager-component.
 #include <stdlib.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <time.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -235,8 +236,8 @@ int main(int argc, char *argv[])
         }
         else
         {
-            ptrA = "./a";
-            ptrB = "./b";
+            ptrA = "./a16";
+            ptrB = "./b16";
         }
 
         printf("Path to matrix A: %s\n", ptrA);
@@ -282,8 +283,8 @@ int main(int argc, char *argv[])
                 printf("\n");
             printf("%.3f ", master_1d_matrixA[i]);
         }
-        // Write 1-d matrices to 2-d matrices
 
+        // Write 1-d matrices to 2-d matrices
         double master_2d_matrixA[matrixDim][matrixDim], master_2d_matrixB[matrixDim][matrixDim];
         for (y = 0; y < matrixDim; y++)
             for (x = 0; x < matrixDim; x++)
@@ -302,7 +303,7 @@ int main(int argc, char *argv[])
         }
 
         // Create childs
-        int numberOfChilds = sqrt(elemsToHandleA);
+        int numberOfChilds = sqrt(matrixDim) * sqrt(matrixDim);
         char *program = "./t2-worker-prog";
         MPI_Comm child;
         int spawnError[numberOfChilds];
@@ -327,40 +328,41 @@ int main(int argc, char *argv[])
         MPI_Type_commit(&sub_array_resized);
 
         // Create displacement array. Without these displacements Scatter works linewise and the subarrays overlap.
-        int sub_matrix_elements = 1;          // UNNEEDED
-        double recv_buf[sub_matrix_elements]; // UNNEEDED
+        int sub_matrix_elements = sub_matrix_size; // UNNEEDED
+        double recv_buf[sub_matrix_elements];      // UNNEEDED
         int displs[num_procs];
         int sends[num_procs];
         int displ = -1;
 
-        //TODO RE-Imp displacement
-        for (y = 0; y < sub_matrix_size; y++)
-        {
-            for (x = 0; x < sub_matrix_size; x++)
-            {
-                
+        // NEW
+        int dispList[numberOfChilds], sendList[numberOfChilds];
+        int disCounter = 0;
+        int disSkipper = sub_matrix_size * (sub_matrix_size - 1);
 
-            }
+        if (my_rank == printer)
+        {
+            printf("sub_matrix_size:%d \n", sub_matrix_size);
         }
 
-        for (int i = 0; i < sub_matrix_size; ++i)
+        // Det. how to set the displacements.
+        for (i = 0; i < numberOfChilds; i++)
         {
-            for (int j = 0; j < sub_matrix_size; ++j)
-            {
-                displ += 1;
-                displs[i * sub_matrix_size + j] = displ;
-            }
-            for (int j = 0; j < sub_matrix_size; ++j)
-            {
-                sends[i * sub_matrix_size + j] = 1;
-            }
-            displ += (sub_matrix_size - 1) * sub_matrix_size;
+            dispList[i] = disCounter;
+            disCounter++;
+            if (disCounter % sub_matrix_size == 0)
+                disCounter += disSkipper;
+            sendList[i] = 1;
         }
-
+        if (my_rank == printer)
+        {
+            printf("disList: ");
+            for (i = 0; i < numberOfChilds; i++)
+                printf("%d,", dispList[i]);
+            printf("\n");
+        }
         // Scatter matrix_A and matrix_B to child processes
-        //MPI_Scatterv(const void *sendbuf, const int *sendcounts, const int *displs, MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype, int root, MPI_Comm comm);
-        //MPI_Scatterv(master_2d_matrixA, sends, displs, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
-        MPI_Scatterv(master_2d_matrixA, sends, displs, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
+        MPI_Scatterv(master_2d_matrixA, sendList, dispList, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
+        MPI_Scatterv(master_2d_matrixB, sendList, dispList, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
 
         MPI_Barrier(child);
         printf("Master off\n");
