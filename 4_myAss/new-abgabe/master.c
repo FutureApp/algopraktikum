@@ -59,12 +59,12 @@ int main(int argc, char *argv[])
     // -------
 
     // DEV
-    ptrA = "./test16x16.double";
-    ptrB = "./test16x16.double";
+    ptrA = "./A_64x64";
+    ptrB = "./B_64x64";
     // ----
 
-    printf("Path to matrix A: %s\n", ptrA);
-    printf("Path to matrix B: %s\n", ptrB);
+    // printf("Path to matrix A: %s\n", ptrA);
+    // printf("Path to matrix B: %s\n", ptrB);
 
     // ---------------------------------------------------------------[ Load matrix A,B] -----------------
     MPI_File mpi_fileA, mpi_fileB;
@@ -93,19 +93,24 @@ int main(int argc, char *argv[])
     // -----------------------------------------------------------------[ Show matrix A & B] -------------
     if (my_rank == printer)
     {
-        printf("A\n");
+        // printf("A\n");
         for (i = 0; i < elmsOfMatrixA; i++)
         {
-            if (i % master_matrixDimension == 0)
-                printf("\n");
-            printf("%.3f ", master_1d_matrixA[i]);
+            if (i % master_matrixDimension == 0){
+
+                // printf("\n");
+            }
+            // printf("%.3f ", master_1d_matrixA[i]);
         }
-        printf("\nB\n");
+        // printf("\nB\n");
         for (i = 0; i < elmsOfMatrixA; i++)
         {
             if (i % master_matrixDimension == 0)
-                printf("\n");
-            printf("%.3f ", master_1d_matrixB[i]);
+            {
+
+                // printf("\n");
+            }
+            // printf("%.3f ", master_1d_matrixB[i]);
         }
     }
 
@@ -118,7 +123,7 @@ int main(int argc, char *argv[])
     char *worker_program = "./t2-worker-prog";
     MPI_Comm child;
     int spawnError[numberOfChilds];
-    printf("MASTER spawing childs (%d).\n", numberOfChilds);
+    // printf("MASTER spawing childs (%d).\n", numberOfChilds);
     MPI_Comm_spawn(worker_program, MPI_ARGV_NULL, numberOfChilds, MPI_INFO_NULL, 0, MPI_COMM_WORLD, &child, spawnError);
 
     // Send info to childs.
@@ -143,7 +148,7 @@ int main(int argc, char *argv[])
 
     int num_procs = numberOfChilds;
     int sub_matrix_size = (master_matrixDimension / sqrt(numberOfChilds));
-    printf(" sub: %d", sub_matrix_size);
+    // printf(" sub: %d", sub_matrix_size);
     int complete_array_dims[2] = {master_matrixDimension, master_matrixDimension};
     int sub_array_dims[2] = {sub_matrix_size, sub_matrix_size};
     int start_array[2] = {0, 0};
@@ -156,30 +161,32 @@ int main(int argc, char *argv[])
     // Calculate displacements
     int dispList[numberOfChilds], sendList[numberOfChilds];
     int disCounter = 0;
-    int disSkipper = sub_matrix_size * (sub_matrix_size - 1);
+    int disSkipper = master_matrixDimension;
+    int test = numberOfChilds / 2;
+    int takeBack = test;
 
-    if (my_rank == printer)
-    {
-        printf("sub_matrix_size:%d \n", sub_matrix_size);
-    }
+    // printf("            TAKE BACK: %d", takeBack);
 
-    // Det. how to set the displacements.
-    // TODO
-    int test = sqrt(numberOfChilds);
     for (i = 0; i < numberOfChilds; i++)
     {
         dispList[i] = disCounter;
         disCounter++;
         if (disCounter % test == 0)
+        {
+            disCounter -= takeBack;
             disCounter += disSkipper;
+        }
         sendList[i] = 1;
     }
+
     if (my_rank == printer)
     {
-        printf("disList: ");
+        // printf("disList: ");
         for (i = 0; i < numberOfChilds; i++)
-            printf("%d,", dispList[i]);
-        printf("\n");
+        {
+            // printf("%d,", dispList[i]);
+        }
+        // printf("\n");
     }
     // ###################################################################################################
 
@@ -187,12 +194,12 @@ int main(int argc, char *argv[])
     // Scatter matrix_A and matrix_B to child processes
     double *recv_buf[master_matrixDimension * master_matrixDimension];
     int sub_matrix_elements = master_matrixDimension * master_matrixDimension;
-    printf(" MASTER : %f ", master_2d_matrixA[1][8]);
+    // printf(" MASTER : %f ", master_2d_matrixA[1][8]);
     MPI_Scatterv(master_2d_matrixA, sendList, dispList, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
     MPI_Scatterv(master_2d_matrixB, sendList, dispList, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
-    MPI_Barrier(child);
     // ###################################################################################################
+    // printf("                                                                                Master off\n");
+    MPI_Barrier(MPI_COMM_WORLD);
     MPI_Barrier(child);
-    printf("                                                                                Master off\n");
     MPI_Finalize();
 }
