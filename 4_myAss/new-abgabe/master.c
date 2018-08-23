@@ -59,8 +59,8 @@ int main(int argc, char *argv[])
     // -------
 
     // DEV
-    ptrA = "./A_64x64";
-    ptrB = "./B_64x64";
+    ptrA = "./A_16x16";
+    ptrB = "./B_16x16";
     // ----
 
     // printf("Path to matrix A: %s\n", ptrA);
@@ -96,7 +96,8 @@ int main(int argc, char *argv[])
         // printf("A\n");
         for (i = 0; i < elmsOfMatrixA; i++)
         {
-            if (i % master_matrixDimension == 0){
+            if (i % master_matrixDimension == 0)
+            {
 
                 // printf("\n");
             }
@@ -118,8 +119,7 @@ int main(int argc, char *argv[])
 
     // ----------------------------------------------------------[ Spawn Worker (interComm)] -------------
 
-    int numberWorkerToSpawn = sqrt(master_matrixDimension);
-    int numberOfChilds = numberWorkerToSpawn;
+    int numberOfChilds = sqrt(master_matrixDimension);
     char *worker_program = "./t2-worker-prog";
     MPI_Comm child;
     int spawnError[numberOfChilds];
@@ -146,8 +146,7 @@ int main(int argc, char *argv[])
     // Create the datatype
     MPI_Datatype sub_array_type, sub_array_resized;
 
-    int num_procs = numberOfChilds;
-    int sub_matrix_size = (master_matrixDimension / sqrt(numberOfChilds));
+    int sub_matrix_size = sqrt(master_matrixDimension);
     // printf(" sub: %d", sub_matrix_size);
     int complete_array_dims[2] = {master_matrixDimension, master_matrixDimension};
     int sub_array_dims[2] = {sub_matrix_size, sub_matrix_size};

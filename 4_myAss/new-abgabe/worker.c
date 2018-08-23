@@ -119,12 +119,23 @@ int main(int argc, char *argv[])
     // ###################################################################################################
 
     // ----------------------------------------------------------------- [ cartesian - typo] -------------
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(300);
+    for (i = 0; i < world_size; i++)
+    {
+        if (world_rank == i)
+        {
+            printf("\n ALIVE - MY WORLD RANK: %d", world_rank);
+        }
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    usleep(300);
     MPI_Comm cartCom;
     int nodesInCart;
     int me;
     int coords[2];
     int per[2] = {1, 1};
-    int dimSize_Cart = sqrt(world_size); // !!!!!! Because of the worldsize, we know what number the dim is.
+    int dimSize_Cart = world_size / 2; // !!!!!! Because of the worldsize, we know what number the dim is.
     int dims[2] = {dimSize_Cart, dimSize_Cart};
     MPI_Cart_create(MPI_COMM_WORLD, 2, dims,
                     per, 1, &cartCom);
