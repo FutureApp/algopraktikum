@@ -182,6 +182,7 @@ int main(int argc, char *argv[])
     // --------------------------------------------------------------------[ Alignment SHOW] -------------
 
     // Prints matrix
+    /*
     for (i = 4; i < world_size; i++)
     {
         MPI_Barrier(MPI_COMM_WORLD);
@@ -196,7 +197,7 @@ int main(int argc, char *argv[])
                 printf("%.3f ", local_1d_matrixA[x]);
             }
         }
-    } /**/
+    }  */
     // ###################################################################################################
 
     // -------------------------------------------------------------------------[ Calculate] -------------
@@ -226,8 +227,7 @@ int main(int argc, char *argv[])
     // -------------------------------------------------------------------- [ Show result C] -------------
 
     printer = 0;
-    printf("\n                                                        ####[%d] Worker off\n", world_rank);
-    /**/
+    /*
     for (i = 0; i < world_size; i++)
     {
         MPI_Barrier(MPI_COMM_WORLD);
@@ -245,55 +245,89 @@ int main(int argc, char *argv[])
         MPI_Barrier(MPI_COMM_WORLD);
         usleep(300);
     }
+    */
     // ###################################################################################################
 
     // ------------------------------------------------------------------[ Collect results ] -------------
-    // Write result to 2d-matrix.
+    // transform 1-d result into 2d-matrix.
     int rowCounter = 0;
+    int colCounter = 0;
     for (i = 0; i < dimSize * dimSize; i++)
     {
         if ((i % dimSize == 0) && (i != 0))
         {
+            local_2d_matrixC[rowCounter][colCounter] = local_1d_matrixC[i];
+            colCounter++;
+            if (colCounter % dimSize == 0)
+            {
+                rowCounter++;
+                colCounter = 0;
+            }
         }
     }
-    int dispList[nodesInCart], sendList[nodesInCart];
-    int disCounter = 0;
-    int disSkipper = dimOfOriMatrix;
-    int takeBack = test;
+    int complete_array_dims[2] = {dimOfOriMatrix, dimOfOriMatrix};
+    int sub_array_dims[2] = {dimSize, dimSize};
+    int start_array[2] = {(coords[0] * dimSize), (coords[1] * dimSize)}; // The position in the global matrix corresponds to the coordinate in the communicator
+    MPI_Datatype sub_array_type, sub_array_resized;
+    MPI_Type_create_subarray(2, complete_array_dims, sub_array_dims, start_array, MPI_ORDER_C, MPI_DOUBLE, &sub_array_type);
+    MPI_Type_commit(&sub_array_type);
 
-    // printf("            TAKE BACK: %d", takeBack);
-    for (i = 0; i < numberOfChilds; i++)
-    {
-        dispList[i] = disCounter;
-        disCounter++;
-        if (disCounter % test == 0)
-        {
-            disCounter -= takeBack;
-            disCounter += disSkipper;
-        }
-        sendList[i] = 1;
-    }
+    // Open file
+    MPI_File resFile;
+    char *resFileName = "./deb_result.double";
+    MPI_File_open(cartCom, resFileName, MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &resFile);
 
-    if (my_rank == printer)
-    {
-        // printf("disList: ");
-        for (i = 0; i < numberOfChilds; i++)
-        {
-            // printf("%d,", dispList[i]);
-        }
-        // printf("\n");
-    }
+    MPI_File_set_view(resFile, 0, MPI_DOUBLE, sub_array_type, "native", MPI_INFO_NULL);
+    MPI_File_write_all(resFile, local_1d_matrixC, dimSize * dimSize, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    MPI_File_close(&resFile);
+
     // ###################################################################################################
 
     // ------------------------------------------------------------------[ Scatter the data] -------------
-    // Scatter matrix_A and matrix_B to child processes
-    double *recv_buf[dimOfOriMatrix * dimOfOriMatrix];
-    int sub_matrix_elements = dimOfOriMatrix * dimOfOriMatrix;
-    // printf(" MASTER : %f ", master_2d_matrixA[1][8]);
-    MPI_Gatherv(local_2d_matrixC, sendList, dispList, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
+
     // ###################################################################################################
-    // -----------------------------------------------------------------[ Show matrix A & B] -------------
+
+    // -------------------------------------------------------------[ Show matrix C Child-0] -------------
+
     // ###################################################################################################
+    // -------------------------------------------------------------------- [ Show Result C] -------------
+    if (world_rank == 0)
+    {
+        // ---------------------------------------------------------------[ Load matrix A,B] -----------------
+        MPI_File mpi_fileA;
+        MPI_Offset fsizeA;
+        int elmsOfMatrixA;
+
+        MPI_File_open(MPI_COMM_SELF, resFileName, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_fileA);
+        MPI_File_get_size(mpi_fileA, &fsizeA);
+
+        elmsOfMatrixA = fsizeA / (sizeof(double));
+        int elmsPerRowMaster = sqrt(elmsOfMatrixA);
+
+        double *master_1d_matrixA = malloc(sizeof(double) * elmsOfMatrixA);
+        int master_matrixDimension = (int)sqrt(elmsOfMatrixA);
+
+        MPI_File_read(mpi_fileA, master_1d_matrixA, elmsOfMatrixA, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        MPI_File_close(&mpi_fileA);
+
+        printf(".-.-.-.-.-.-.-.-.--..-- Result reloaded --..--.-.-.-.-.-.-.-.");
+
+        printf("\n");
+        for (i = 0; i < elmsOfMatrixA; i++)
+        {
+            if (i % elmsPerRowMaster == 0)
+                printf("\n");
+            printf("%.3f ", master_1d_matrixA[i]);
+        }
+    }
+    // ###################################################################################################
+
+    // -------------------------------------------------------------------- [ Show Result C] -------------
+    // ###################################################################################################
+    MPI_Barrier(cartCom);
+    usleep(300);
+    printf("\n########## Exit ############\n\n\n");
+    exit(1);
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Barrier(parent_communicator);
     MPI_Finalize();

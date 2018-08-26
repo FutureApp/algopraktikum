@@ -67,8 +67,8 @@ int main(int argc, char *argv[])
     // -------
 
     // DEV
-    ptrA = "./A_16x16";
-    ptrB = "./B_16x16";
+    ptrA = "./A_256x256";
+    ptrB = "./B_256x256";
     //ptrA = "./test16x16.double";
     // ptrB = "./test16x16.double";
     // ----
