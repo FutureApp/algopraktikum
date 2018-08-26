@@ -22,6 +22,14 @@ This is the manager-component.
 #include <stdio.h>
 #include <string.h>
 
+void seq_MatrixMulti(double *matrix_a, double *matrix_b, double *matrix_c, int dimOfQuadMatrix)
+{
+    int i, j, k;
+    for (i = 0; i < dimOfQuadMatrix; i++)
+        for (j = 0; j < dimOfQuadMatrix; j++)
+            for (k = 0; k < dimOfQuadMatrix; k++)
+                matrix_c[i * dimOfQuadMatrix + j] += matrix_a[i * dimOfQuadMatrix + k] * matrix_b[k * dimOfQuadMatrix + j];
+}
 int main(int argc, char *argv[])
 {
 
@@ -61,6 +69,8 @@ int main(int argc, char *argv[])
     // DEV
     ptrA = "./A_16x16";
     ptrB = "./B_16x16";
+    //ptrA = "./test16x16.double";
+    // ptrB = "./test16x16.double";
     // ----
 
     // printf("Path to matrix A: %s\n", ptrA);
@@ -91,35 +101,47 @@ int main(int argc, char *argv[])
     // ###################################################################################################
 
     // -----------------------------------------------------------------[ Show matrix A & B] -------------
+    seq_MatrixMulti(master_1d_matrixA, master_1d_matrixB, master_1d_matrixC, master_matrixDimension);
     if (my_rank == printer)
     {
-        // printf("A\n");
+        printf("A\n");
         for (i = 0; i < elmsOfMatrixA; i++)
         {
             if (i % master_matrixDimension == 0)
             {
 
-                // printf("\n");
+                printf("\n");
             }
-            // printf("%.3f ", master_1d_matrixA[i]);
+            printf("%.3f ", master_1d_matrixA[i]);
         }
-        // printf("\nB\n");
+        printf("\nB\n");
         for (i = 0; i < elmsOfMatrixA; i++)
         {
             if (i % master_matrixDimension == 0)
             {
 
-                // printf("\n");
+                printf("\n");
             }
-            // printf("%.3f ", master_1d_matrixB[i]);
+            printf("%.3f ", master_1d_matrixB[i]);
+        }
+        printf("\nC\n");
+        for (i = 0; i < elmsOfMatrixA; i++)
+        {
+            if (i % master_matrixDimension == 0)
+            {
+
+                printf("\n");
+            }
+            printf("%.3f ", master_1d_matrixC[i]);
         }
     }
+    printf("\n\n");
 
     // ###################################################################################################
 
     // ----------------------------------------------------------[ Spawn Worker (interComm)] -------------
 
-    int numberOfChilds = sqrt(master_matrixDimension);
+    int numberOfChilds = master_matrixDimension;
     char *worker_program = "./t2-worker-prog";
     MPI_Comm child;
     int spawnError[numberOfChilds];
@@ -138,8 +160,8 @@ int main(int argc, char *argv[])
     for (y = 0; y < master_matrixDimension; y++)
         for (x = 0; x < master_matrixDimension; x++)
         {
-            master_2d_matrixA[x][y] = master_1d_matrixA[elmMatCounter];
-            master_2d_matrixB[x][y] = master_1d_matrixB[elmMatCounter];
+            master_2d_matrixA[y][x] = master_1d_matrixA[elmMatCounter];
+            master_2d_matrixB[y][x] = master_1d_matrixB[elmMatCounter];
             elmMatCounter++;
         }
 
@@ -161,7 +183,7 @@ int main(int argc, char *argv[])
     int dispList[numberOfChilds], sendList[numberOfChilds];
     int disCounter = 0;
     int disSkipper = master_matrixDimension;
-    int test = numberOfChilds / 2;
+    int test = sqrt(numberOfChilds);
     int takeBack = test;
 
     // printf("            TAKE BACK: %d", takeBack);
