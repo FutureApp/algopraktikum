@@ -41,7 +41,7 @@ void seq_MatrixMulti(double *matrix_a, double *matrix_b, double *matrix_c, int d
 
 int main(int argc, char *argv[])
 {
-    int printer = -1;
+    int printer = 0;
     int i, x;
 
     int world_size, world_rank;
@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
 
     // get info from parent-comm
     MPI_Bcast(&dimOfOriMatrix, 1, MPI_INT, 0, parent_communicator);
-    printf(" DIM GOT: %d", dimOfOriMatrix);
+    //printf(" DIM GOT: %d", dimOfOriMatrix);
     dimOfLocalMatrix = sqrt(world_size);
 
     // ---------------------------------------------------------- Prepare ---
@@ -119,8 +119,58 @@ int main(int argc, char *argv[])
     // ###################################################################################################
 
     // ----------------------------------------------------------------- [ cartesian - typo] -------------
-    MPI_Barrier(MPI_COMM_WORLD);
+    if (world_rank == printer)
+    {
+        printf("\n Creating the cart-topo.");
+    }
+    MPI_Comm cartCom;
+    int nodesInCart;
+    int card_rank;
+    int coords[2];
+    int per[2] = {1, 1};
+    int dimSize = sqrt(world_size); // !!!!!! Because of the worldsize, we know what number the dim is.
+    int dims[2] = {dimSize, dimSize};
+
+    MPI_Cart_create(MPI_COMM_WORLD, 2, dims, per, 1, &cartCom);
+    MPI_Comm_rank(cartCom, &card_rank);
+    MPI_Cart_coords(cartCom, card_rank, 2, coords);
+    MPI_Comm_size(cartCom, &nodesInCart);
+
+    int bufSend = world_rank;
+    int dir, disp, rank_source, rank_dest;
+    dir = 1;
+    disp = 1;
+    int shiftLeftXTimes = coords[0], shiftTopXTimes = coords[1];
+
+    printf("\nWORLD_RANK: %d , LEFT: %d ; TOP: %d", world_rank, shiftLeftXTimes, shiftTopXTimes);
+    MPI_Cart_shift(cartCom, dir, shiftLeftXTimes, &rank_source, &rank_dest);
+    MPI_Sendrecv_replace(local_1d_matrixA, numberOfElmsToRev, MPI_DOUBLE, rank_source, 99, rank_dest,
+                         MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
+
+    dir = 0;
+    MPI_Cart_shift(cartCom, dir, shiftTopXTimes, &rank_source, &rank_dest);
+    MPI_Sendrecv_replace(local_1d_matrixB, numberOfElmsToRev, MPI_DOUBLE, rank_source, 99, rank_dest,
+                         MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
+
+    MPI_Barrier(cartCom);
     usleep(300);
+    if (printer == card_rank)
+        printf("\n\n\n");
+    for (i = 0; i < nodesInCart; i++)
+    {
+        if (i == card_rank)
+        {
+            printf("\nWORLD_RANK: %d , BUF: %d", world_rank, bufSend);
+        }
+        MPI_Barrier(cartCom);
+        usleep(300);
+    }
+    if (printer == card_rank)
+        printf("\n\n\n");
+    MPI_Barrier(cartCom);
+    usleep(300);
+    exit(1);
+
     for (i = 0; i < world_size; i++)
     {
         if (world_rank == i)
@@ -128,109 +178,19 @@ int main(int argc, char *argv[])
             printf("\n ALIVE - MY WORLD RANK: %d", world_rank);
         }
     }
-    MPI_Barrier(MPI_COMM_WORLD);
-    usleep(300);
-    MPI_Comm cartCom;
-    int nodesInCart;
-    int me;
-    int coords[2];
-    int per[2] = {1, 1};
-    int dimSize_Cart = sqrt(world_size); // !!!!!! Because of the worldsize, we know what number the dim is.
-    int dims[2] = {dimSize_Cart, dimSize_Cart};
-    MPI_Cart_create(MPI_COMM_WORLD, 2, dims,
-                    per, 1, &cartCom);
 
-    MPI_Comm_rank(cartCom, &me);
-    MPI_Cart_coords(cartCom, me, 2, coords);
-    MPI_Comm_size(cartCom, &nodesInCart);
-
-    MPI_Barrier(cartCom);
-    printf("\nNODES IN CART : %d", nodesInCart);
-    MPI_Barrier(cartCom);
-
-    // printer = 0;
-    if (me == printer)
-    {
-        printf("\nLocal C- Befors | ME-W(%d)\n", me);
-        for (i = 0; i < dimOfLocalMatrix * dimOfLocalMatrix; i++)
-        {
-            if (i % dimOfLocalMatrix == 0)
-                printf("\n");
-            printf("%.3f ", local_1d_matrixC[i]);
-        }
-    }
-    /*
-    // Prints matrix
-    for (i = 0; i < world_size; i++)
-    {
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(300);
-        if (me == i)
-        {
-            printf("\n------------------------- %d A Before-Alig----------------", me);
-            for (x = 0; x < numberOfElmsToRev; x++)
-            {
-                if (x % dimOfLocalMatrix == 0)
-                    printf("\n");
-                printf("%.3f ", local_1d_matrixA[x]);
-            }
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(300);
-    } */
-
-    MPI_Comm comm2d;
-    int cart_DIM = sqrt(world_size); // !!!!!! Because of the worldsize, we know what number the dim is.
-
-    int ndim = 2;
-    int periodic[2] = {1, 1};
-    int coord_2d[2] = {0, 0};
-    int rank_2d = 0;
-    int dimensions[2] = {cart_DIM, cart_DIM};
-    MPI_Cart_create(MPI_COMM_WORLD, ndim, dimensions, periodic, 1, &comm2d);
-    MPI_Cart_coords(comm2d, world_rank, ndim, coord_2d);
-    MPI_Cart_rank(comm2d, coord_2d, &rank_2d);
-    printf("I am %d: (%d,%d); originally %d\n", rank_2d, coord_2d[0], coord_2d[1], world_rank);
     // ###################################################################################################
 
     // ------------------------------------------------------------------------[ Alignment ] -------------
-    MPI_Barrier(cartCom);
-    int moveLeftXTimes = me / dimSize_Cart, moveUpXTimes = me % dimSize_Cart;
-    int disp = moveLeftXTimes;
-    int rank_source = me, rank_dest;
-    int dir = 0;
-
-    if (me == printer)
-        printf("    Alignment Start | %d | Times left: %d\n", me, disp);
-    printf("                                                           ME: %d", me);
-    MPI_Barrier(cartCom);
-    MPI_Cart_shift(cartCom, dir, moveLeftXTimes, &rank_source, &rank_dest);
-    printf("\n        ME %d: left:%d up:%d | Sender:%d, Receiver:%d\n", me, moveLeftXTimes, moveUpXTimes, me, rank_dest);
-    if (rank_source != rank_dest)
-        MPI_Sendrecv_replace(local_1d_matrixA, numberOfElmsToRev, MPI_DOUBLE, rank_dest, 0,
-                             rank_source, 0, cartCom, MPI_STATUS_IGNORE);
-    MPI_Barrier(cartCom);
-    if (me == printer)
-        printf("\nFinish First");
-    // Shifts cols top till boarder
-    dir = 1;
-    disp = moveUpXTimes;
-    MPI_Cart_shift(cartCom, dir, moveUpXTimes, &rank_source, &rank_dest);
-    MPI_Sendrecv_replace(local_1d_matrixB, numberOfElmsToRev, MPI_DOUBLE, rank_dest, 0,
-                         rank_source, 0, cartCom, MPI_STATUS_IGNORE);
-    MPI_Barrier(cartCom);
-    if (me == printer)
-        printf("\n    Alignment End");
-    /**/
 
     // Prints matrix
     for (i = 4; i < world_size; i++)
     {
         MPI_Barrier(MPI_COMM_WORLD);
-        usleep(300);
-        if (me == i)
+        //usleep(300);
+        if (card_rank == i)
         {
-            printf("\n------------------------- %d A After-Alig----------------", me);
+            printf("\n------------------------- %d A After-Alig----------------", card_rank);
             for (x = 0; x < numberOfElmsToRev; x++)
             {
                 if (x % dimOfLocalMatrix == 0)
@@ -238,13 +198,12 @@ int main(int argc, char *argv[])
                 printf("%.3f ", local_1d_matrixA[x]);
             }
         }
-        MPI_Barrier(MPI_COMM_WORLD);
-        usleep(300);
     } /**/
     // ###################################################################################################
 
     // -------------------------------------------------------------------------[ Calculate] -------------
-    if (me == printer)
+    /*
+    if (card_rank== printer)
         printf("\n    Calculation Starts");
     // first time:
     seq_MatrixMulti(local_1d_matrixA, local_1d_matrixB, local_1d_matrixC, dimOfLocalMatrix);
@@ -263,7 +222,9 @@ int main(int argc, char *argv[])
                              rank_source, 0, cartCom, MPI_STATUS_IGNORE);
         MPI_Barrier(cartCom);
         seq_MatrixMulti(local_1d_matrixA, local_1d_matrixB, local_1d_matrixC, dimOfLocalMatrix);
+        
     }
+        */
     // ###################################################################################################
 
     // -------------------------------------------------------------------- [ Show result C] -------------
