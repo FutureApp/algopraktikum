@@ -141,12 +141,14 @@ int main(int argc, char *argv[])
     dir = 1;
     disp = 1;
     int shiftLeftXTimes = coords[0], shiftTopXTimes = coords[1];
-    int bufTop = world_rank, bufLeft = world_rank;
+    // DEB
+    int bufTop = card_rank, bufLeft = card_rank;
 
-    printf("\nWORLD_RANK: %d , LEFT: %d ; TOP: %d", world_rank, shiftLeftXTimes, shiftTopXTimes);
+    printf("\nSHIFTS _______ WORLD_RANK: %d , LEFT: %d ; TOP: %d", world_rank, shiftLeftXTimes, shiftTopXTimes);
     MPI_Cart_shift(cartCom, dir, shiftLeftXTimes, &rank_source, &rank_dest);
     MPI_Sendrecv_replace(local_1d_matrixA, numberOfElmsToRev, MPI_DOUBLE, rank_source, 99, rank_dest,
                          MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
+    // DEB
     MPI_Sendrecv_replace(&bufLeft, 1, MPI_INT, rank_source, 99, rank_dest,
                          MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
 
@@ -154,22 +156,18 @@ int main(int argc, char *argv[])
     MPI_Cart_shift(cartCom, dir, shiftTopXTimes, &rank_source, &rank_dest);
     MPI_Sendrecv_replace(local_1d_matrixB, numberOfElmsToRev, MPI_DOUBLE, rank_source, 99, rank_dest,
                          MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
+    // DEB
     MPI_Sendrecv_replace(&bufTop, 1, MPI_INT, rank_source, 99, rank_dest,
                          MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
 
-    for (i = 0; i < world_rank; i++)
+    // DEB
+    for (i = 0; i < nodesInCart; i++)
     {
         if (card_rank == i)
         {
-            if ("\nWORLD_RANK: %d LEFT: %d TOP: %d", card_rank, bufLeft, bufTop)
+            printf("\nWORLD_RANK: %d LEFT: %d TOP: %d", card_rank, bufLeft, bufTop);
         }
     }
-
-    if (printer == card_rank)
-        printf("\n\n\n EXIT ");
-    MPI_Barrier(cartCom);
-    usleep(300);
-    exit(1);
 
     for (i = 0; i < world_size; i++)
     {
@@ -181,7 +179,7 @@ int main(int argc, char *argv[])
 
     // ###################################################################################################
 
-    // ------------------------------------------------------------------------[ Alignment ] -------------
+    // --------------------------------------------------------------------[ Alignment SHOW] -------------
 
     // Prints matrix
     for (i = 4; i < world_size; i++)
@@ -202,18 +200,18 @@ int main(int argc, char *argv[])
     // ###################################################################################################
 
     // -------------------------------------------------------------------------[ Calculate] -------------
-    /*
-    if (card_rank== printer)
+
+    if (card_rank == printer)
         printf("\n    Calculation Starts");
     // first time:
     seq_MatrixMulti(local_1d_matrixA, local_1d_matrixB, local_1d_matrixC, dimOfLocalMatrix);
     // loop vor dimSize_Cart-1 times, now.
-    disp = +1;
-    for (i = 0; i < dimSize_Cart - 1; i++)
+    disp = 1;
+    for (i = 0; i < dimSize - 1; i++)
     {
         dir = 1;
         MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
-        printf("\n        ** ALIVE %d ** %d (%d > %d)\n", me, numberOfElmsToRev, rank_source, rank_dest);
+        printf("\n        ** ALIVE %d ** %d (%d > %d)\n", card_rank, numberOfElmsToRev, rank_source, rank_dest);
         MPI_Sendrecv_replace(local_1d_matrixA, numberOfElmsToRev, MPI_DOUBLE, rank_dest, 0,
                              rank_source, 0, cartCom, MPI_STATUS_IGNORE);
         dir = 0;
@@ -222,9 +220,7 @@ int main(int argc, char *argv[])
                              rank_source, 0, cartCom, MPI_STATUS_IGNORE);
         MPI_Barrier(cartCom);
         seq_MatrixMulti(local_1d_matrixA, local_1d_matrixB, local_1d_matrixC, dimOfLocalMatrix);
-        
     }
-        */
     // ###################################################################################################
 
     // -------------------------------------------------------------------- [ Show result C] -------------
@@ -251,6 +247,51 @@ int main(int argc, char *argv[])
     }
     // ###################################################################################################
 
+    // ------------------------------------------------------------------[ Collect results ] -------------
+    // Write result to 2d-matrix.
+    int rowCounter = 0;
+    for (i = 0; i < dimSize * dimSize; i++)
+    {
+        if ((i % dimSize == 0) && (i != 0))
+        {
+        }
+    }
+    int dispList[nodesInCart], sendList[nodesInCart];
+    int disCounter = 0;
+    int disSkipper = dimOfOriMatrix;
+    int takeBack = test;
+
+    // printf("            TAKE BACK: %d", takeBack);
+    for (i = 0; i < numberOfChilds; i++)
+    {
+        dispList[i] = disCounter;
+        disCounter++;
+        if (disCounter % test == 0)
+        {
+            disCounter -= takeBack;
+            disCounter += disSkipper;
+        }
+        sendList[i] = 1;
+    }
+
+    if (my_rank == printer)
+    {
+        // printf("disList: ");
+        for (i = 0; i < numberOfChilds; i++)
+        {
+            // printf("%d,", dispList[i]);
+        }
+        // printf("\n");
+    }
+    // ###################################################################################################
+
+    // ------------------------------------------------------------------[ Scatter the data] -------------
+    // Scatter matrix_A and matrix_B to child processes
+    double *recv_buf[dimOfOriMatrix * dimOfOriMatrix];
+    int sub_matrix_elements = dimOfOriMatrix * dimOfOriMatrix;
+    // printf(" MASTER : %f ", master_2d_matrixA[1][8]);
+    MPI_Gatherv(local_2d_matrixC, sendList, dispList, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
+    // ###################################################################################################
     // -----------------------------------------------------------------[ Show matrix A & B] -------------
     // ###################################################################################################
     MPI_Barrier(MPI_COMM_WORLD);

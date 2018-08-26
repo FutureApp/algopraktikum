@@ -220,7 +220,7 @@ int main(int argc, char *argv[])
     MPI_Scatterv(master_2d_matrixB, sendList, dispList, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
     // ###################################################################################################
     // printf("                                                                                Master off\n");
-     MPI_Barrier(MPI_COMM_WORLD);
-     MPI_Barrier(child);
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(child);
     MPI_Finalize();
 }
