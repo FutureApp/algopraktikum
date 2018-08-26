@@ -6,4 +6,4 @@
  A4 T2
  Example Call: 
  mpicc -o ./t2-worker-prog ./t2-worker.c -lm && mpicc -o ./app1 ./t2-master.c -lm && mpiexec  -n 1 ./app1 
- 
+ mpicc -o ./t2-worker-prog ./newt2-worker.c -lm && mpicc -o ./app1 ./newt2-master.c -lm && mpiexec  -n 1 ./app1  

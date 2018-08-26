@@ -268,37 +268,37 @@ int main(int argc, char *argv[])
         MPI_File mpi_fileB;
         MPI_Offset fsizeA;
         MPI_Offset fsizeB;
-        int elemsToHandleA, elemsToHandleB;
+        int elmsOfMatrixA, elemsToHandleB;
 
         err = MPI_File_open(MPI_COMM_SELF, ptrA, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_fileA);
         MPI_File_get_size(mpi_fileA, &fsizeA);
         err = MPI_File_open(MPI_COMM_SELF, ptrB, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_fileB);
         MPI_File_get_size(mpi_fileB, &fsizeB);
 
-        elemsToHandleA = fsizeA / (sizeof(double));
+        elmsOfMatrixA = fsizeA / (sizeof(double));
         elemsToHandleB = fsizeB / (sizeof(double));
 
-        double *master_1d_matrixA = malloc(sizeof(double) * elemsToHandleA);
+        double *master_1d_matrixA = malloc(sizeof(double) * elmsOfMatrixA);
         double *master_1d_matrixB = malloc(sizeof(double) * elemsToHandleB);
         double *master_ori_matrixC = malloc(sizeof(double) * elemsToHandleB);
 
-        int matrixDim = (int)sqrt(elemsToHandleA);
+        int matrixDim = (int)sqrt(elmsOfMatrixA);
 
-        MPI_File_read(mpi_fileA, master_1d_matrixA, elemsToHandleA, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        MPI_File_read(mpi_fileA, master_1d_matrixA, elmsOfMatrixA, MPI_DOUBLE, MPI_STATUS_IGNORE);
         MPI_File_read(mpi_fileB, master_1d_matrixB, elemsToHandleB, MPI_DOUBLE, MPI_STATUS_IGNORE);
         MPI_File_close(&mpi_fileA);
         MPI_File_close(&mpi_fileB);
 
         // print the two metrices
         printf("A\n");
-        for (i = 0; i < elemsToHandleA; i++)
+        for (i = 0; i < elmsOfMatrixA; i++)
         {
             if (i % matrixDim == 0)
                 printf("\n");
             printf("%.3f ", master_1d_matrixA[i]);
         }
         printf("\nB\n");
-        for (i = 0; i < elemsToHandleA; i++)
+        for (i = 0; i < elmsOfMatrixA; i++)
         {
             if (i % matrixDim == 0)
                 printf("\n");
