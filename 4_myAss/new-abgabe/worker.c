@@ -141,32 +141,32 @@ int main(int argc, char *argv[])
     dir = 1;
     disp = 1;
     int shiftLeftXTimes = coords[0], shiftTopXTimes = coords[1];
+    int bufTop = world_rank, bufLeft = world_rank;
 
     printf("\nWORLD_RANK: %d , LEFT: %d ; TOP: %d", world_rank, shiftLeftXTimes, shiftTopXTimes);
     MPI_Cart_shift(cartCom, dir, shiftLeftXTimes, &rank_source, &rank_dest);
     MPI_Sendrecv_replace(local_1d_matrixA, numberOfElmsToRev, MPI_DOUBLE, rank_source, 99, rank_dest,
+                         MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
+    MPI_Sendrecv_replace(&bufLeft, 1, MPI_INT, rank_source, 99, rank_dest,
                          MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
 
     dir = 0;
     MPI_Cart_shift(cartCom, dir, shiftTopXTimes, &rank_source, &rank_dest);
     MPI_Sendrecv_replace(local_1d_matrixB, numberOfElmsToRev, MPI_DOUBLE, rank_source, 99, rank_dest,
                          MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
+    MPI_Sendrecv_replace(&bufTop, 1, MPI_INT, rank_source, 99, rank_dest,
+                         MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
 
-    MPI_Barrier(cartCom);
-    usleep(300);
-    if (printer == card_rank)
-        printf("\n\n\n");
-    for (i = 0; i < nodesInCart; i++)
+    for (i = 0; i < world_rank; i++)
     {
-        if (i == card_rank)
+        if (card_rank == i)
         {
-            printf("\nWORLD_RANK: %d , BUF: %d", world_rank, bufSend);
+            if ("\nWORLD_RANK: %d LEFT: %d TOP: %d", card_rank, bufLeft, bufTop)
         }
-        MPI_Barrier(cartCom);
-        usleep(300);
     }
+
     if (printer == card_rank)
-        printf("\n\n\n");
+        printf("\n\n\n EXIT ");
     MPI_Barrier(cartCom);
     usleep(300);
     exit(1);
