@@ -22,6 +22,103 @@ This is the manager-component.
 #include <stdio.h>
 #include <string.h>
 
+void h_printInputHelp()
+{
+    printf("\n------------------------------------------------------[INPUT HELP]                             \n");
+    printf("Ready for calculation. Please choose one of the following coms to start or abort the calculation:\n");
+    printf("To start the calc. enter                             < s >\n");
+    printf("To abort the program or an ongoing calcution, enter  < e >\n");
+}
+/**
+ * @brief Prints the help message. Only root (rank=0) will print the message.
+ * 
+ * @param my_rank  Rank of node. 
+ */
+void h_rootPrintHelp(int my_rank)
+{
+    if (my_rank == 0)
+    {
+        printf("------------------------------------[ HELP ]\n");
+        printf("*Parameter -a <path to picture>   :    Path to matrix a.\n");
+        printf("*Parameter -b <path to picture>   :    Path to matrix b.  \n");
+        printf("*Parameter -c <path to picture>   :    Path to matrix c.  \n");
+        printf("\n");
+        printf("Example call:\n");
+        printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
+    }
+}
+
+/**
+ * @brief Check end sets the needed values.
+ * 
+ * @param argc  Count of values.
+ * @param argv  The values.
+ */
+void h_setAndCheckParams(int argc, char *argv[])
+{
+    int index;
+    int c;
+    int man_a = -1;
+    int man_b = -1;
+    int man_c = -1;
+
+    opterr = 0;
+    while ((c = getopt(argc, argv, "ha:b:c:")) != -1)
+        switch (c)
+        {
+        case 'h':
+            h_rootPrintHelp(my_rank);
+            exit(0);
+            break;
+        case 'a':
+            pathmaster_1d_matrixA = optarg;
+            man_a = 0;
+            break;
+        case 'b':
+            pathmaster_1d_matrixB = optarg;
+            man_b = 0;
+            break;
+        case 'c':
+            pathmaster_ori_matrixC = optarg;
+            man_c = 0;
+            break;
+        case '?':
+            if (my_rank == 0)
+            {
+
+                if (isprint(optopt))
+                {
+
+                    fprintf(stderr, "Unknown option `-%c'.\n", optopt);
+                }
+                else
+                {
+                    fprintf(stderr,
+                            "Unknown option character `\\x%x'.\n",
+                            optopt);
+                }
+            }
+        default:
+            printf("Error. Can't process input.\n");
+            abort();
+        }
+    int res = man_a + man_b + man_c;
+    if (res != 0)
+    {
+        if (my_rank == 0)
+        {
+
+            printf("\n\n");
+            printf("Error. Mismatched number of parameters passed to the program.\n");
+            h_rootPrintHelp(0);
+            printf("\n\n");
+        }
+        abort();
+    }
+    for (index = optind; index < argc; index++)
+        printf("Non-option argument %s\n", argv[index]);
+}
+
 void seq_MatrixMulti(double *matrix_a, double *matrix_b, double *matrix_c, int dimOfQuadMatrix)
 {
     int i, j, k;
@@ -67,8 +164,19 @@ int main(int argc, char *argv[])
     // -------
 
     // DEV
-    ptrA = "./A_256x256";
-    ptrB = "./B_256x256";
+    ptrA = "./A_16x16";
+    ptrB = "./B_16x16";
+
+    time_t timestamp_sec; /* timestamp in second */
+    time(&timestamp_sec); /* get current time; same as: timestamp_sec = time(NULL)  */
+    int result = (float)timestamp_sec;
+    char resultFileName[32];
+    sprintf(resultFileName, "result_%d.double", result); // puts string into buffer
+    printf("%s\n", resultFileName);                      // outputs so you can see it
+    printf("-----------------------+++++++++++++++++++++");
+
+    char *ptrC[120];
+    //exit(1);
     //ptrA = "./test16x16.double";
     // ptrB = "./test16x16.double";
     // ----
@@ -145,11 +253,12 @@ int main(int argc, char *argv[])
     char *worker_program = "./t2-worker-prog";
     MPI_Comm child;
     int spawnError[numberOfChilds];
-    // printf("MASTER spawing childs (%d).\n", numberOfChilds);
+    printf("MASTER  spawning childs (%d). This will take a moment.\n", numberOfChilds);
     MPI_Comm_spawn(worker_program, MPI_ARGV_NULL, numberOfChilds, MPI_INFO_NULL, 0, MPI_COMM_WORLD, &child, spawnError);
 
     // Send info to childs.
     MPI_Bcast(&master_matrixDimension, 1, MPI_INT, MPI_ROOT, child);
+    MPI_Bcast(resultFileName, 32, MPI_CHAR, MPI_ROOT, child);
     // ###################################################################################################
 
     // ---------------------------------------------------------------[ Prepare for Scatter] -------------

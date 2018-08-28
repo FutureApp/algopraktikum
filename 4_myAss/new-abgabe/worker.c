@@ -46,6 +46,7 @@ int main(int argc, char *argv[])
 
     int world_size, world_rank;
     int dimOfOriMatrix, dimOfLocalMatrix;
+    char resultFileName[32];
     MPI_File mpi_file;
     MPI_Comm parent_communicator;
     MPI_Init(&argc, &argv);
@@ -55,7 +56,9 @@ int main(int argc, char *argv[])
 
     // get info from parent-comm
     MPI_Bcast(&dimOfOriMatrix, 1, MPI_INT, 0, parent_communicator);
+    MPI_Bcast(resultFileName, 32, MPI_CHAR, 0, parent_communicator);
     //printf(" DIM GOT: %d", dimOfOriMatrix);
+    //printf("\nDIM GOT: %s", resultFileName);
     dimOfLocalMatrix = sqrt(world_size);
 
     // ---------------------------------------------------------- Prepare ---
@@ -141,26 +144,25 @@ int main(int argc, char *argv[])
     dir = 1;
     disp = 1;
     int shiftLeftXTimes = coords[0], shiftTopXTimes = coords[1];
-    // DEB
     int bufTop = card_rank, bufLeft = card_rank;
 
-    printf("\nSHIFTS _______ WORLD_RANK: %d , LEFT: %d ; TOP: %d", world_rank, shiftLeftXTimes, shiftTopXTimes);
+    // DEBUG
+    // printf("\nSHIFTS _______ WORLD_RANK: %d , LEFT: %d ; TOP: %d", world_rank, shiftLeftXTimes, shiftTopXTimes);
     MPI_Cart_shift(cartCom, dir, shiftLeftXTimes, &rank_source, &rank_dest);
     MPI_Sendrecv_replace(local_1d_matrixA, numberOfElmsToRev, MPI_DOUBLE, rank_source, 99, rank_dest,
                          MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
-    // DEB
-    MPI_Sendrecv_replace(&bufLeft, 1, MPI_INT, rank_source, 99, rank_dest,
-                         MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
+    // DEBUG
+    // MPI_Sendrecv_replace(&bufLeft, 1, MPI_INT, rank_source, 99, rank_dest, MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
 
     dir = 0;
     MPI_Cart_shift(cartCom, dir, shiftTopXTimes, &rank_source, &rank_dest);
     MPI_Sendrecv_replace(local_1d_matrixB, numberOfElmsToRev, MPI_DOUBLE, rank_source, 99, rank_dest,
                          MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
-    // DEB
-    MPI_Sendrecv_replace(&bufTop, 1, MPI_INT, rank_source, 99, rank_dest,
-                         MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
+    // DEBUG
+    // MPI_Sendrecv_replace(&bufTop, 1, MPI_INT, rank_source, 99, rank_dest,                MPI_ANY_TAG, cartCom, MPI_STATUS_IGNORE);
 
     // DEB
+    /*
     for (i = 0; i < nodesInCart; i++)
     {
         if (card_rank == i)
@@ -176,7 +178,7 @@ int main(int argc, char *argv[])
             printf("\n ALIVE - MY WORLD RANK: %d", world_rank);
         }
     }
-
+    */
     // ###################################################################################################
 
     // --------------------------------------------------------------------[ Alignment SHOW] -------------
@@ -212,7 +214,8 @@ int main(int argc, char *argv[])
     {
         dir = 1;
         MPI_Cart_shift(cartCom, dir, disp, &rank_source, &rank_dest);
-        printf("\n        ** ALIVE %d ** %d (%d > %d)\n", card_rank, numberOfElmsToRev, rank_source, rank_dest);
+        // DEBUG
+        // printf("\n        ** ALIVE %d ** %d (%d > %d)\n", card_rank, numberOfElmsToRev, rank_source, rank_dest);
         MPI_Sendrecv_replace(local_1d_matrixA, numberOfElmsToRev, MPI_DOUBLE, rank_dest, 0,
                              rank_source, 0, cartCom, MPI_STATUS_IGNORE);
         dir = 0;
@@ -267,33 +270,32 @@ int main(int argc, char *argv[])
     }
     int complete_array_dims[2] = {dimOfOriMatrix, dimOfOriMatrix};
     int sub_array_dims[2] = {dimSize, dimSize};
-    int start_array[2] = {(coords[0] * dimSize), (coords[1] * dimSize)}; // The position in the global matrix corresponds to the coordinate in the communicator
+    int posX = (coords[0] * dimSize), posY = (coords[1] * dimSize);
+    int start_array[2] = {posX, posY};
     MPI_Datatype sub_array_type, sub_array_resized;
     MPI_Type_create_subarray(2, complete_array_dims, sub_array_dims, start_array, MPI_ORDER_C, MPI_DOUBLE, &sub_array_type);
     MPI_Type_commit(&sub_array_type);
 
+    // ###################################################################################################
+
+    // ------------------------------------------------------------------------ [ Save data] -------------
     // Open file
     MPI_File resFile;
-    char *resFileName = "./deb_result.double";
+    char *resFileName = resultFileName;
+
     MPI_File_open(cartCom, resFileName, MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &resFile);
 
     MPI_File_set_view(resFile, 0, MPI_DOUBLE, sub_array_type, "native", MPI_INFO_NULL);
     MPI_File_write_all(resFile, local_1d_matrixC, dimSize * dimSize, MPI_DOUBLE, MPI_STATUS_IGNORE);
     MPI_File_close(&resFile);
-
     // ###################################################################################################
 
-    // ------------------------------------------------------------------[ Scatter the data] -------------
-
-    // ###################################################################################################
-
-    // -------------------------------------------------------------[ Show matrix C Child-0] -------------
-
+        // -------------------------------------------------------------[ Show matrix C Child-0] -------------
     // ###################################################################################################
     // -------------------------------------------------------------------- [ Show Result C] -------------
     if (world_rank == 0)
     {
-        // ---------------------------------------------------------------[ Load matrix A,B] -----------------
+        // -------------------------------------------------------------[ Load matrix C] -----------------
         MPI_File mpi_fileA;
         MPI_Offset fsizeA;
         int elmsOfMatrixA;
@@ -310,8 +312,9 @@ int main(int argc, char *argv[])
         MPI_File_read(mpi_fileA, master_1d_matrixA, elmsOfMatrixA, MPI_DOUBLE, MPI_STATUS_IGNORE);
         MPI_File_close(&mpi_fileA);
 
+        // DEBUG
+        /*
         printf(".-.-.-.-.-.-.-.-.--..-- Result reloaded --..--.-.-.-.-.-.-.-.");
-
         printf("\n");
         for (i = 0; i < elmsOfMatrixA; i++)
         {
@@ -319,15 +322,12 @@ int main(int argc, char *argv[])
                 printf("\n");
             printf("%.3f ", master_1d_matrixA[i]);
         }
+        */
     }
     // ###################################################################################################
 
-    // -------------------------------------------------------------------- [ Show Result C] -------------
+    // ------------------------------------------------------------------------ [ Finalize ] -------------
     // ###################################################################################################
-    MPI_Barrier(cartCom);
-    usleep(300);
-    printf("\n########## Exit ############\n\n\n");
-    exit(1);
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Barrier(parent_communicator);
     MPI_Finalize();
