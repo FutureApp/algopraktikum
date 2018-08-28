@@ -25,7 +25,7 @@ This is the manager-component.
 void h_printInputHelp()
 {
     printf("\n------------------------------------------------------[INPUT HELP]                             \n");
-    printf("Ready for calculation. Please choose one of the following coms to start or abort the calculation:\n");
+    printf("#Ready for calculation. Please choose one of the following coms to start or abort the calculation:\n");
     printf("To start the calc. enter                             < s >\n");
     printf("To abort the program or an ongoing calcution, enter  < e >\n");
 }
@@ -47,78 +47,6 @@ void h_rootPrintHelp(int my_rank)
         printf("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n");
     }
 }
-
-/**
- * @brief Check end sets the needed values.
- * 
- * @param argc  Count of values.
- * @param argv  The values.
- */
-void h_setAndCheckParams(int argc, char *argv[])
-{
-    int index;
-    int c;
-    int man_a = -1;
-    int man_b = -1;
-    int man_c = -1;
-
-    opterr = 0;
-    while ((c = getopt(argc, argv, "ha:b:c:")) != -1)
-        switch (c)
-        {
-        case 'h':
-            h_rootPrintHelp(my_rank);
-            exit(0);
-            break;
-        case 'a':
-            pathmaster_1d_matrixA = optarg;
-            man_a = 0;
-            break;
-        case 'b':
-            pathmaster_1d_matrixB = optarg;
-            man_b = 0;
-            break;
-        case 'c':
-            pathmaster_ori_matrixC = optarg;
-            man_c = 0;
-            break;
-        case '?':
-            if (my_rank == 0)
-            {
-
-                if (isprint(optopt))
-                {
-
-                    fprintf(stderr, "Unknown option `-%c'.\n", optopt);
-                }
-                else
-                {
-                    fprintf(stderr,
-                            "Unknown option character `\\x%x'.\n",
-                            optopt);
-                }
-            }
-        default:
-            printf("Error. Can't process input.\n");
-            abort();
-        }
-    int res = man_a + man_b + man_c;
-    if (res != 0)
-    {
-        if (my_rank == 0)
-        {
-
-            printf("\n\n");
-            printf("Error. Mismatched number of parameters passed to the program.\n");
-            h_rootPrintHelp(0);
-            printf("\n\n");
-        }
-        abort();
-    }
-    for (index = optind; index < argc; index++)
-        printf("Non-option argument %s\n", argv[index]);
-}
-
 void seq_MatrixMulti(double *matrix_a, double *matrix_b, double *matrix_c, int dimOfQuadMatrix)
 {
     int i, j, k;
@@ -144,7 +72,6 @@ int main(int argc, char *argv[])
 
     // Section to handle user-interaction and get information of ptrA and ptrB
     /*
-    */
     MPI_File filo;
     char *pathsToResultFile = "./test16x16.double"; //PATH where to save result
     int times = 16 * 16;
@@ -161,12 +88,59 @@ int main(int argc, char *argv[])
     MPI_File_open(MPI_COMM_SELF, pathsToResultFile, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &filo);
     MPI_File_write(filo, localTest, times, MPI_DOUBLE, MPI_STATUS_IGNORE);
     MPI_File_close(&filo);
+    */
     // -------
 
-    // DEV
-    ptrA = "./A_16x16";
-    ptrB = "./B_16x16";
+    // --------------------------------------------------------------- [ Get info from user ] -------------
+    fd_set s_rd, s_wr, s_ex;
+    int tmp_bool = 1;
+    char tmp_charUserInput, com;
+    FD_ZERO(&s_rd);
+    FD_SET(fileno(stdin), &s_rd);
 
+    int sysInstruc = -1;
+    int uInstraction = 0;
+    int retrys = 3;
+    h_printInputHelp();
+    select(fileno(stdin) + 1, &s_rd, NULL, NULL, NULL);
+    for (i = 0; i < retrys; i++)
+    {
+        if (i != 0)
+            h_printInputHelp();
+        while ((tmp_charUserInput = getchar()) != '\n' && tmp_charUserInput != EOF)
+        {
+            printf("This intstraction was detected: <%c>\n", tmp_charUserInput);
+            if (tmp_charUserInput == 's')
+            {
+                i = 100;
+                sysInstruc = 1;
+            }
+            else if (tmp_charUserInput == 'e')
+            {
+                i = 100;
+                sysInstruc = 0;
+            }
+            else
+                printf("Error --- Instruction doesn't match to any one which is offered. Try again.\n#######################\n");
+        }
+    }
+    printf("\n--------------- Module user-interaction ------");
+
+    // ask for A
+    printf("\nEnter path to matrix A:\n");
+    select(fileno(stdin) + 1, &s_rd, NULL, NULL, NULL);
+    fgets(pathToA, 64, stdin);
+    ptrA = strtok(pathToA, "\n");
+
+    //ask for B
+    printf("\nEnter path to matrix B:\n");
+    select(fileno(stdin) + 1, &s_rd, NULL, NULL, NULL);
+    fgets(pathToB, 64, stdin);
+    ptrB = strtok(pathToB, "\n");
+    printf("\n System will start the calculation");
+
+    // ###################################################################################################
+    // DEV
     time_t timestamp_sec; /* timestamp in second */
     time(&timestamp_sec); /* get current time; same as: timestamp_sec = time(NULL)  */
     int result = (float)timestamp_sec;
@@ -190,10 +164,9 @@ int main(int argc, char *argv[])
     int elmsOfMatrixA, elmsOfMatrixB;
 
     err = MPI_File_open(MPI_COMM_SELF, ptrA, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_fileA);
-    MPI_File_get_size(mpi_fileA, &fsizeA);
     err = MPI_File_open(MPI_COMM_SELF, ptrB, MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_fileB);
+    MPI_File_get_size(mpi_fileA, &fsizeA);
     MPI_File_get_size(mpi_fileB, &fsizeB);
-
     elmsOfMatrixA = fsizeA / (sizeof(double));
     elmsOfMatrixB = fsizeB / (sizeof(double));
 
@@ -209,6 +182,7 @@ int main(int argc, char *argv[])
     // ###################################################################################################
 
     // -----------------------------------------------------------------[ Show matrix A & B] -------------
+    // ###################################################################################################
     seq_MatrixMulti(master_1d_matrixA, master_1d_matrixB, master_1d_matrixC, master_matrixDimension);
     if (my_rank == printer)
     {
@@ -255,7 +229,7 @@ int main(int argc, char *argv[])
     int spawnError[numberOfChilds];
     printf("MASTER  spawning childs (%d). This will take a moment.\n", numberOfChilds);
     MPI_Comm_spawn(worker_program, MPI_ARGV_NULL, numberOfChilds, MPI_INFO_NULL, 0, MPI_COMM_WORLD, &child, spawnError);
-
+    printf("MASTER  spawning complete. The distribution of the elements starts.\n");
     // Send info to childs.
     MPI_Bcast(&master_matrixDimension, 1, MPI_INT, MPI_ROOT, child);
     MPI_Bcast(resultFileName, 32, MPI_CHAR, MPI_ROOT, child);
@@ -296,7 +270,6 @@ int main(int argc, char *argv[])
     int takeBack = test;
 
     // printf("            TAKE BACK: %d", takeBack);
-
     for (i = 0; i < numberOfChilds; i++)
     {
         dispList[i] = disCounter;
@@ -328,8 +301,40 @@ int main(int argc, char *argv[])
     MPI_Scatterv(master_2d_matrixA, sendList, dispList, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
     MPI_Scatterv(master_2d_matrixB, sendList, dispList, sub_array_resized, recv_buf, sub_matrix_elements, MPI_DOUBLE, MPI_ROOT, child);
     // ###################################################################################################
-    // printf("                                                                                Master off\n");
+    printf("MASTER  Distribution complete.\n");
+    printf("MASTER  The calcution will take some time. At least %d shift's will be needed.\n",(int)sqrt(numberOfChilds));
+    // Wait till user-exit.
+    flags = 0;
+    sysInstruc = 0;
+    char comQuit[64] = "";
+    char *ptrQ;
+    printf("\n\n\n\n\n\n\n");
+    printf("MASTER To quit the execution enter <q>.\n>>> ");
+    /*while (flags == 0)
+            MPI_Test(&requestf, &flags, &status);
+        */
+    while (sysInstruc == 0)
+        while ((tmp_charUserInput = getchar()) != '\n' && tmp_charUserInput != EOF)
+        {
+        if (tmp_charUserInput == 'q')
+        {
+            sysInstruc = 1;
+        }
+        else
+        {
+            printf("*MASTER* What? Instruction <%c> is unkown. Try again.\n", tmp_charUserInput);
+            printf("*MASTER* To quit the execution enter <q>.\n>>> ");
+        }
+        }
+
+    //FINAL condition
+    MPI_Request finalRequest;
+    printf("Waiting for childs to terminate.\n");
+    MPI_Barrier(child);
+    printf("All childs terminated\n");
+    printf("Result-file: ./<%s>\n", resultFileName);
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Barrier(child);
+    printf("\n\n**** Thanks for the awesome time and all the help from you! ****\nExecution will stop now.\n");
     MPI_Finalize();
 }

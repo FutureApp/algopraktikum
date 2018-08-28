@@ -41,7 +41,7 @@ void seq_MatrixMulti(double *matrix_a, double *matrix_b, double *matrix_c, int d
 
 int main(int argc, char *argv[])
 {
-    int printer = 0;
+    int printer = -1;
     int i, x;
 
     int world_size, world_rank;
@@ -123,9 +123,7 @@ int main(int argc, char *argv[])
 
     // ----------------------------------------------------------------- [ cartesian - typo] -------------
     if (world_rank == printer)
-    {
         printf("\n Creating the cart-topo.");
-    }
     MPI_Comm cartCom;
     int nodesInCart;
     int card_rank;
@@ -204,8 +202,10 @@ int main(int argc, char *argv[])
 
     // -------------------------------------------------------------------------[ Calculate] -------------
 
+    /*
     if (card_rank == printer)
         printf("\n    Calculation Starts");
+    */
     // first time:
     seq_MatrixMulti(local_1d_matrixA, local_1d_matrixB, local_1d_matrixC, dimOfLocalMatrix);
     // loop vor dimSize_Cart-1 times, now.
@@ -229,8 +229,8 @@ int main(int argc, char *argv[])
 
     // -------------------------------------------------------------------- [ Show result C] -------------
 
-    printer = 0;
     /*
+    printer = 0;
     for (i = 0; i < world_size; i++)
     {
         MPI_Barrier(MPI_COMM_WORLD);
@@ -250,8 +250,7 @@ int main(int argc, char *argv[])
     }
     */
     // ###################################################################################################
-
-    // ------------------------------------------------------------------[ Collect results ] -------------
+    // ------------------------------------------------------------------- [ Write results ] -------------
     // transform 1-d result into 2d-matrix.
     int rowCounter = 0;
     int colCounter = 0;
@@ -284,16 +283,15 @@ int main(int argc, char *argv[])
     char *resFileName = resultFileName;
 
     MPI_File_open(cartCom, resFileName, MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &resFile);
-
     MPI_File_set_view(resFile, 0, MPI_DOUBLE, sub_array_type, "native", MPI_INFO_NULL);
     MPI_File_write_all(resFile, local_1d_matrixC, dimSize * dimSize, MPI_DOUBLE, MPI_STATUS_IGNORE);
     MPI_File_close(&resFile);
     // ###################################################################################################
 
-        // -------------------------------------------------------------[ Show matrix C Child-0] -------------
+    // -------------------------------------------------------------[ Show matrix C Child-0] -------------
     // ###################################################################################################
     // -------------------------------------------------------------------- [ Show Result C] -------------
-    if (world_rank == 0)
+    if (world_rank == printer)
     {
         // -------------------------------------------------------------[ Load matrix C] -----------------
         MPI_File mpi_fileA;
@@ -313,8 +311,8 @@ int main(int argc, char *argv[])
         MPI_File_close(&mpi_fileA);
 
         // DEBUG
-        /*
         printf(".-.-.-.-.-.-.-.-.--..-- Result reloaded --..--.-.-.-.-.-.-.-.");
+        printf("                    \nWaiting for childs to terminate.\n>>>");
         printf("\n");
         for (i = 0; i < elmsOfMatrixA; i++)
         {
@@ -322,13 +320,15 @@ int main(int argc, char *argv[])
                 printf("\n");
             printf("%.3f ", master_1d_matrixA[i]);
         }
+        /*
         */
     }
     // ###################################################################################################
 
     // ------------------------------------------------------------------------ [ Finalize ] -------------
     // ###################################################################################################
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Barrier(parent_communicator);
+    MPI_Barrier(cartCom);
+    MPI_Barrier(parent_communicator); // 1-sync-point
+    MPI_Barrier(parent_communicator); // 2 [final]-sync-point
     MPI_Finalize();
 }
